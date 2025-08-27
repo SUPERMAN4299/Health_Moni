@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <a class="privacy" href="#">Privacy & Policy</a>
+
+  <main class="login-card" role="region" aria-labelledby="loginTitle">
+    <h2 id="loginTitle" class="login-title">LOGIN</h2>
+    <p class="lead">Please enter your credentials to continue. Your Client ID and Password keep your account secure.</p>
+
+    <form onsubmit="event.preventDefault(); alert('ID: '+idInput.value+'\nPassword: '+pwInput.value)">
+      <label class="label" for="idInput">Enter Your ID</label>
+      <input id="idInput" type="text" placeholder="Client ID" class="input" required />
+
+      <label class="label" for="pwInput">Enter Your Password</label>
+      <input id="pwInput" type="password" placeholder="Password" class="input" required />
+
+      <button type="submit" class="btn">SUBMIT</button>
+    </form>
+  </main>
+</body>
+</html>
