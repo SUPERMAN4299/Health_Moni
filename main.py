@@ -1,146 +1,273 @@
-import tkinter as tk
+from flask import Flask
+import customtkinter as ctk
 from tkinter import messagebox
 import webbrowser
+import os
+import threading
+import subprocess
+import platform  
+import re   
 
-# ---------------- Placeholder Entry Class ---------------- #
-class PlaceholderEntry(tk.Entry):
-    def __init__(self, master=None, placeholder="PLACEHOLDER", color='grey', **kwargs):
-        super().__init__(master, **kwargs)
-        self.placeholder = placeholder
-        self.placeholder_color = color
-        self.default_fg_color = self['fg']
+# ---------------- Flask Server ---------------- #
+app = Flask(__name__)
 
-        self.bind("<FocusIn>", self.foc_in)
-        self.bind("<FocusOut>", self.foc_out)
+# ---------------- Security (Encoding / Decoding) ---------------- #
+def hex_encode(text: str) -> str:
+    return text.encode().hex()
 
-        self.put_placeholder()
+def hex_decode(hex_text: str) -> str:
+    return bytes.fromhex(hex_text).decode()
 
-    def put_placeholder(self):
-        self.insert(0, self.placeholder)
-        self['fg'] = self.placeholder_color
+# ---------------- Built-in Encoded Credentials ---------------- #
+stored_user_enc = hex_encode("admin")   # username
+stored_pass_enc = hex_encode("admin")   # password
 
-    def foc_in(self, *args):
-        if self['fg'] == self.placeholder_color:
-            self.delete('0', 'end')
-            self['fg'] = self.default_fg_color
+stored_user = hex_decode(stored_user_enc)
+stored_pass = hex_decode(stored_pass_enc)
 
-    def foc_out(self, *args):
-        if not self.get():
-            self.put_placeholder()
+add_user_enc = hex_encode("admin1") 
+add_pass_enc = hex_encode("admin1") 
 
-# ---------------- Gradient Background ---------------- #
-class GradientFrame(tk.Canvas):
-    def __init__(self, master, color1, color2, **kwargs):
-        super().__init__(master, **kwargs)
-        self.color1 = color1
-        self.color2 = color2
-        self.bind("<Configure>", self._draw_gradient)
+stored_user1 = hex_decode(add_user_enc)
+stored_pass1 = hex_decode(add_pass_enc)
 
-    def _draw_gradient(self, event=None):
-        self.delete("gradient")
-        width = self.winfo_width()
-        height = self.winfo_height()
-        limit = height
-        (r1, g1, b1) = self.winfo_rgb(self.color1)
-        (r2, g2, b2) = self.winfo_rgb(self.color2)
-        r_ratio = float(r2 - r1) / limit
-        g_ratio = float(g2 - g1) / limit
-        b_ratio = float(b2 - b1) / limit
+DEVICE_MAC = "00:1a:2b:3c:4d:5e" 
 
-        for i in range(limit):
-            nr = int(r1 + (r_ratio * i))
-            ng = int(g1 + (g_ratio * i))
-            nb = int(b1 + (b_ratio * i))
-            color = "#%04x%04x%04x" % (nr, ng, nb)
-            self.create_line(0, i, width, i, tags=("gradient",), fill=color)
-        self.lower("gradient")
+# -------------- MAC check -------------- #
+def is_device_connected(target_mac):
+    """
+    Check if a device with the given MAC address is connected (Linux or Windows)
+    """
+    target_mac = target_mac.lower().replace("-", ":")
+    os_name = platform.system().lower()
+
+    try:
+        if os_name == "windows":
+            output = subprocess.check_output("arp -a", shell=True, text=True)
+        else:  # Linux or others
+            output = subprocess.check_output("ip neigh", shell=True, text=True)
+    except subprocess.CalledProcessError:
+        messagebox.showerror("Error", "Failed to fetch network devices.")
+        return False
+
+    # Extract all MAC addresses
+    macs = re.findall(r'(([0-9a-f]{2}[:-]){5}[0-9a-f]{2})', output.lower())
+    mac_list = [match[0].replace("-", ":") for match in macs]  # normalize for Windows
+
+    return target_mac in mac_list
+
+
+# ---------------- Session Handling ---------------- #
+SESSION_FILE = "session.txt"
+
+def save_session():
+    with open(SESSION_FILE, "w") as f:
+        f.write("logged_in")
+
+def check_session():
+    return os.path.exists(SESSION_FILE)
+
+def clear_session():
+    if os.path.exists(SESSION_FILE):
+        os.remove(SESSION_FILE)
+
+# ---------------- Flask Routes ---------------- #
+@app.route('/security')
+def get_string():
+	return f"Stored Username: {stored_user_enc}, Stored Password: {stored_pass_enc} "f"Username: {add_user_enc},Password: {add_pass_enc}"
+    
+@app.route("/query")
+def query():
+    return """
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health_Moni Project Login Guide</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f4f8;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            background-color: #4CAF50;
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        main {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h1, h2, h3 {
+            margin-bottom: 15px;
+        }
+        h1 {
+            color: #2c3e50;
+        }
+        h2 {
+            color: #34495e;
+        }
+        h3 {
+            color: #7f8c8d;
+        }
+        ol {
+            padding-left: 20px;
+        }
+        a {
+            color: #1abc9c;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .note {
+            background-color: #eafaf1;
+            padding: 10px;
+            border-left: 5px solid #4CAF50;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Welcome to the Health_Moni Project</h1>
+</header>
+
+<main>
+    <section>
+        <h2>How to Login</h2>
+        <div class="note">
+            You will receive a card in your product box containing your Username and Password. Enter them exactly as shown in the app to access our service.
+        </div>
+        <h3>If you're unsure how to proceed, follow these steps carefully:</h3>
+        <ol>
+            <li>Open the box where you received this product.</li>
+            <li>On your desktop, download the software from our website: <a href="http://127.0.0.1:5000/download" target="_blank">Download Here</a></li>
+            <li>Install the software on your PC as usual. Make sure Python is installed: <a href="https://www.python.org" target="_blank">Download Python</a></li>
+            <li>Before opening the app, turn on Bluetooth on your device.</li>
+            <li>Open the software and enter the Username and Password provided in your card.</li>
+            <li>Connect the device associated with our service.</li>
+            <li>Allow the software to access the device.</li>
+            <li>Once connected, you will be redirected to the monitoring dashboard with real-time graphs.</li>
+        </ol>
+    </section>
+</main>
+
+</body>
+</html>
+    """
+
+# ---------------- Dashboard ---------------- #
+def open_dashboard():
+    dash = ctk.CTkToplevel()
+    dash.title("Dashboard")
+    dash.geometry("400x300")
+    ctk.CTkLabel(dash, text="Welcome to Dashboard!",
+                 font=ctk.CTkFont(size=20, weight="bold")).pack(pady=40)
+
+    logout_btn = ctk.CTkButton(dash, text="Logout", fg_color="red",
+                               command=lambda:[clear_session(), dash.destroy(), show_login()])
+    logout_btn.pack(pady=20)
 
 # ---------------- Submit Function ---------------- #
 def submit():
     username = entry_user.get()
     password = entry_pass.get()
-    if username == entry_user.placeholder or password == entry_pass.placeholder:
+
+    if not username or not password:
         messagebox.showerror("Error", "Please enter username and password")
         return
-    if username == "admin" and password == "123":
-        messagebox.showinfo("Success", "Login successful!")
+
+    if (username == stored_user or username == stored_user1) and \
+       (password == stored_pass or password == stored_pass1):
+        if is_device_connected(DEVICE_MAC):
+            save_session()
+            messagebox.showinfo("Success", "Login Successful and Device Connected!")
+            root.withdraw()
+            open_dashboard()
+        else:
+            messagebox.showerror("Device Not Connected",
+                                 "Your device is not connected. Please connect the device and try again.")
     else:
-        messagebox.showerror("Error", "Invalid username or password")
-
-# ---------------- Hover Effects for Button ---------------- #
-def on_enter(e):
-    btn['bg'] = "#1A2E6F"   # Hover color
-
-def on_leave(e):
-    btn['bg'] = "#0A014F"   # Default color
-
-# ---------------- Password Field Fix ---------------- #
-def on_pass_focus_in(event):
-    if entry_pass.get() == entry_pass.placeholder:
-        entry_pass.delete(0, tk.END)
-        entry_pass.config(show="*")
-        entry_pass['fg'] = 'black'
-
-def on_pass_focus_out(event):
-    if not entry_pass.get():
-        entry_pass.config(show="")
-        entry_pass.put_placeholder()
+        messagebox.showerror("Failed", "Invalid Username or Password")
 
 # ---------------- Open Link ---------------- #
 def open_link(event=None):
-    webbrowser.open("https://www.google.com")  # LOcalHost
+    webbrowser.open("http://127.0.0.1:5000/query")
 
-# ---------------- Main Window ---------------- #
-root = tk.Tk()
-root.title("Login Page")
-root.geometry("500x500")
-root.resizable(False, False)
+# ---------------- Open Link ---------------- #
+def open_link(event=None):
+    webbrowser.open("http://127.0.0.1:5000/query")
 
-# Gradient background
-gradient = GradientFrame(root, "#0A014F", "#27E4F2")
-gradient.pack(fill="both", expand=True)
+# ---------------- GUI Login ---------------- #
+def show_login():
+    global root, entry_user, entry_pass
 
-# ---------------- Frame (Glass Effect) ---------------- #
-frame = tk.Frame(gradient, bg="#27E4F2", bd=3, relief="ridge", 
-                 highlightbackground="white", highlightthickness=2)
-frame.place(relx=0.5, rely=0.5, anchor="center", width=400, height=380)
+    root = ctk.CTk()
+    root.title("Login Page")
+    root.geometry("500x550")
+    root.resizable(False, False)
 
-title = tk.Label(frame, text="Login", fg="#0A014F", bg="#27E4F2", font=("Poppins", 22, "bold"))
-title.pack(pady=(20, 10))
+    frame = ctk.CTkFrame(root, corner_radius=20, width=500, height=450)
+    frame.place(relx=0.5, rely=0.5, anchor="center")
 
-subtitle = tk.Label(frame, text="Please enter your username and password", fg="#0A014F", bg="#27E4F2", 
-                    font=("Poppins", 12), wraplength=350, justify="center")
-subtitle.pack(pady=(0, 15))
+    title = ctk.CTkLabel(frame, text="Welcome Back!",
+                         font=ctk.CTkFont(size=24, weight="bold"),
+                         text_color="#00FFFF")
+    title.pack(pady=(30, 10))
 
-# ---------------- Input Fields ---------------- #
-entry_user = PlaceholderEntry(frame, placeholder="Username", font=("Poppins", 14), 
-                              bg="#BFF8FC", bd=0, relief="flat", fg="black")
-entry_user.pack(pady=10, ipady=10, ipadx=10, fill="x", padx=40)
+    subtitle = ctk.CTkLabel(frame, text="Please login to continue",
+                            font=ctk.CTkFont(size=14), text_color="#FFFFFF")
+    subtitle.pack(pady=(0, 20))
 
-entry_pass = PlaceholderEntry(frame, placeholder="Password", font=("Poppins", 14), 
-                              bg="#BFF8FC", bd=0, relief="flat", fg="black", show="")
-entry_pass.pack(pady=10, ipady=10, ipadx=10, fill="x", padx=40)
+    entry_user = ctk.CTkEntry(frame, placeholder_text="Username", width=400, height=40,
+                              corner_radius=10, fg_color="#1C1C1C",
+                              border_color="#00FFFF", border_width=2, text_color="white")
+    entry_user.pack(pady=15)
 
-entry_pass.bind("<FocusIn>", on_pass_focus_in)
-entry_pass.bind("<FocusOut>", on_pass_focus_out)
+    entry_pass = ctk.CTkEntry(frame, placeholder_text="Password", width=400, height=40,
+                              corner_radius=10, fg_color="#1C1C1C",
+                              border_color="#00FFFF", border_width=2,
+                              show="*", text_color="white")
+    entry_pass.pack(pady=15)
 
-# ---------------- Submit Button ---------------- #
-btn = tk.Button(frame, text="SUBMIT", command=submit, 
-                bg="#0A014F", fg="white", activebackground="#1A2E6F", activeforeground="white",
-                font=("Poppins", 14, "bold"), relief="flat", cursor="hand2")
-btn.pack(pady=30, fill="x", padx=40)
+    btn = ctk.CTkButton(frame, text="Login", width=400, height=45, corner_radius=10,
+                        fg_color="#00FFFF", hover_color="#1E90FF",
+                        text_color="black",
+                        font=ctk.CTkFont(size=16, weight="bold"),
+                        command=submit)
+    btn.pack(pady=30)
 
-btn.bind("<Enter>", on_enter)
-btn.bind("<Leave>", on_leave)
+    policy = ctk.CTkLabel(frame,
+                          text="Don't know your credentials? Click here",
+                          font=ctk.CTkFont(size=12, underline=True),
+                          text_color="#1E90FF", cursor="hand2")
+    policy.pack(pady=10)
+    policy.bind("<Button-1>", open_link)
 
-# ---------------- Click Me Link ---------------- #
+    root.mainloop()
 
-policy = tk.Label(gradient, text="If you don't know click me",
-                  fg="blue", bg="#27E4F2",   # lighter background
-                  font=("Poppins", 12, "underline"),
-                  cursor="hand2")
-policy.pack(side="bottom", pady=15)
-policy.bind("<Button-1>", open_link)
+# ---------------- Start ---------------- #
+if __name__ == '__main__':
+    # Start Flask in a background thread
+    threading.Thread(target=lambda: app.run(debug=True, use_reloader=False)).start()
 
-
-root.mainloop()
+    # If session exists → skip login
+    if check_session():
+        temp_root = ctk.CTk()
+        temp_root.withdraw()
+        open_dashboard()
+        temp_root.mainloop()
+    else:
+        show_login()
