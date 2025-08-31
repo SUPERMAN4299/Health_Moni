@@ -4,8 +4,6 @@ def hex_encode(text: str) -> str:
 
 
 def hex_decode(hex_text: str) -> str:
-    """Decode hex string back to normal text"""
-    # Clean the input: remove spaces and newlines
     hex_text = hex_text.strip().replace(" ", "").replace("\n", "")
 
     # Check if valid hex
@@ -22,7 +20,7 @@ if __name__ == "__main__":
     action = input("Choose action (encode/decode): ").strip().lower()
 
     if action == "encode":
-        text = input("Enter normal text (MAC address or anything): ").strip()
+        text = input("Enter normal text: ").strip()
         encoded = hex_encode(text)
         print("Hex Encoded:", encoded)
 
