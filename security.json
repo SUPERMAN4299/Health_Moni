@@ -1,7 +1,5 @@
 {
   "stored_user_enc": "61646d696e",
   "stored_pass_enc": "61646d696e",
-  "stored_mac_enc": "343134324636353531443943",
-  "add_user_enc": "61646d696e31",
-  "add_pass_enc": "61646d696e31"
+  "stored_mac_enc": "343134324636353531443943"
 }
