@@ -4,7 +4,7 @@ app = Flask(__name__)
 
 stored_user_enc = "61646d696e"
 stored_pass_enc = "61646d696e"
-stored_mac_enc = "30303a31613a32623a33633a34643a3565"
+stored_mac_enc = "343134324636353531443943" # Enter encoded MAC address
 
 # Testig purpose
 add_user_enc = "61646d696e31"
