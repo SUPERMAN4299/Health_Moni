@@ -57,28 +57,54 @@ except ValueError as e:
 
 
 # -------------- MAC check -------------- #
-def is_device_connected(target_mac):
+
     """
     Check if a device with the given MAC address is connected (Linux or Windows)
-    """
-    target_mac = target_mac.lower().replace("-", ":")
-    os_name = platform.system().lower()
+"""
+DEVICE_MAC = DEVICE_MAC.lower()
+os_name = platform.system().lower()
 
-    try:
-        if os_name == "windows":
-            output = subprocess.check_output("arp -a", shell=True, text=True)
-        else:  # Linux or others
-            output = subprocess.check_output("ip neigh", shell=True, text=True)
-    except subprocess.CalledProcessError:
-        messagebox.showerror("Error", "Failed to fetch network devices.")
-        return False
+try:
+    if os_name == "windows":
 
-    # Extract all MAC addresses
-    macs = re.findall(r'(([0-9a-f]{2}[:-]){5}[0-9a-f]{2})', output.lower())
-    mac_list = [match[0].replace("-", ":") for match in macs]  # normalize for Windows
+        cmd = 'powershell "Get-PnpDevice -Class Bluetooth | Select-Object -Property Name,InstanceId"'
+        result=subprocess.run(cmd, capture_output=True, text=True, shell=True)
+    
+        output = result.stdout
+    else:  # Linux or others
+        output = subprocess.check_output("ip neigh", shell=True, text=True)
+except subprocess.CalledProcessError:
+    messagebox.showerror("Error", "Failed to fetch network devices.")
+    False
 
-    return target_mac in mac_list
+# Extract all MAC addresses
+matches = re.findall(r'DEV_([0-9A-F]{12})', output, re.IGNORECASE)
+mac_list = [m.lower() for m in matches]
 
+#target_mac in mac_list
+
+# ---------------- Submit Function ---------------- #
+def submit():
+    username = entry_user.get()
+    password = entry_pass.get()
+
+    if not username or not password:
+        messagebox.showerror("Error", "Please enter username and password")
+        return
+
+    if username == stored_user_enc and password == stored_pass_enc:
+        if DEVICE_MAC in mac_list:
+            save_session()
+            messagebox.showinfo("Success", "Login Successful and Device Connected!")
+            root.withdraw()
+            open_dashboard()
+        else:
+            messagebox.showerror(
+                "Device Not Connected",
+                "Your device is not connected. Please connect the device and try again."
+            )
+    else:
+        messagebox.showerror("Failed", "Invalid Username or Password")
 
 # ---------------- Session Handling ---------------- #
 SESSION_FILE = "session.txt"
@@ -108,32 +134,8 @@ def open_dashboard():
                                command=lambda:[clear_session(), dash.destroy(), show_login()])
     logout_btn.pack(pady=20)
 
-# ---------------- Submit Function ---------------- #
-def submit():
-    username = entry_user.get()
-    password = entry_pass.get()
 
-    if not username or not password:
-        messagebox.showerror("Error", "Please enter username and password")
-        return
 
-    if username == stored_user_enc and password == stored_pass_enc:
-        if is_device_connected(DEVICE_MAC):
-            save_session()
-            messagebox.showinfo("Success", "Login Successful and Device Connected!")
-            root.withdraw()
-            open_dashboard()
-        else:
-            messagebox.showerror(
-                "Device Not Connected",
-                "Your device is not connected. Please connect the device and try again."
-            )
-    else:
-        messagebox.showerror("Failed", "Invalid Username or Password")
-
-# ---------------- Open Link ---------------- #
-def open_link(event=None):
-    webbrowser.open("http://127.0.0.1:5000/query")
 
 # ---------------- Open Link ---------------- #
 def open_link(event=None):
