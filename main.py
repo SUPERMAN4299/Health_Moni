@@ -50,7 +50,6 @@ try:
     stored_user_enc = hex_decode(sec)
     stored_pass_enc = hex_decode(sec1)
     device_mac = str(hex_decode(sec2).replace(":", "").replace("-", ""))
-    print(f"1 arg{device_mac}")  
 
 except Exception as e:
     print("Error loading credentials:", e)
@@ -58,8 +57,6 @@ except Exception as e:
 
 
 os_name = os.name
-
-
 
 try:
     if os_name == "nt":  # Windows
@@ -71,7 +68,7 @@ try:
             try:
                  # Debug: print device info
                 fetchid =f"{d.DeviceID}"
-                print(fetchid)
+                #print(fetchid)
                 '''s
                     if hasattr(d, "DeviceID") and hasattr(d, "Status"):
                         if d.Status == "OK" and "BluetoothDevice_" in d.DeviceID:
@@ -229,7 +226,6 @@ def upload_data(master, data):
     return None
 
 def fetch_patient_data():
-    """Check if patient data exists (server or local file)"""
     try:
         # 1. Check local file
         if os.path.exists(PATIENT_FILE):
@@ -581,27 +577,34 @@ def open_dashboard(master):
 
 # ---------------- Login ---------------- #
 def submit():
+    
     username = entry_user.get()
     password = entry_pass.get()
-    
-    if not username or not password:
-        messagebox.showerror("Error", "Please enter username and password")
-        return
 
-    if username == stored_user_enc and password == stored_pass_enc:
-        if device_mac.lower() in fetchid.lower():
-            save_session()
-            messagebox.showinfo("Success", "Login Successful and Device Connected!")
-           
-            patient_data = fetch_patient_data()
-            if patient_data:
-                main_dash(root)  
+    if os_name == "nt":  # Windows
+        wmi = win32com.client.Dispatch("WbemScripting.SWbemLocator")
+        svc = wmi.ConnectServer(".", "root\\cimv2")
+        devices = svc.ExecQuery("SELECT * FROM Win32_PnPEntity WHERE PNPClass='Bluetooth'")
+        if not username or not password:
+            messagebox.showerror("Error", "Please enter username and password")
+        if username == stored_user_enc and password == stored_pass_enc:
+            if device_mac in fetchid:
+                for d in devices:
+                    try:
+                        fetchid =f"{d.DeviceID}"
+                    except Exception as e:
+                        print("Error reading device:", e)
+                save_session()
+                messagebox.showinfo("Success", "Login Successful and Device Connected!")
+               
+                patient_data = fetch_patient_data()
+                if patient_data:
+                    main_dash(root)  
+                else:
+                    open_dashboard(root)  
             else:
-                open_dashboard(root)  
-        else:
-            messagebox.showerror("Device Not Connected", "Your device is not connected.")
-    else:
-        messagebox.showerror("Failed", "Invalid Username or Password")
+                messagebox.showerror("Device Not Connected", "Your device is not connected.")
+        
 
 
 def open_link(event=None):
