@@ -2,6 +2,7 @@ import win32com.client
 import pythoncom
 from flask import Flask
 import requests
+import time
 import customtkinter as ctk
 from tkinter import messagebox
 import tkinter as tk
@@ -84,9 +85,6 @@ try:
 except Exception as e:
         print("Error fetching Bluetooth devices:", e)
 
-
-
-# ---------------- MAC Check ---------------- #
 
 
 # ---------------- Session Handling ---------------- #
@@ -577,35 +575,45 @@ def open_dashboard(master):
 
 # ---------------- Login ---------------- #
 def submit():
-    
     username = entry_user.get()
     password = entry_pass.get()
 
-    if os_name == "nt":  # Windows
-        wmi = win32com.client.Dispatch("WbemScripting.SWbemLocator")
-        svc = wmi.ConnectServer(".", "root\\cimv2")
-        devices = svc.ExecQuery("SELECT * FROM Win32_PnPEntity WHERE PNPClass='Bluetooth'")
-        if not username or not password:
-            messagebox.showerror("Error", "Please enter username and password")
-        if username == stored_user_enc and password == stored_pass_enc:
-            #if device_mac in fetchid:
-            for d in devices:
-                time.sleep(5)
-                try:
-                    fetchid =f"{d.DeviceID}"
+    if not username or not password:
+        messagebox.showerror("Error", "Please enter username and password")
+        return
+
+    if username == stored_user_enc and password == stored_pass_enc:
+        if os_name == "nt":  # Windows
+            try:
+                wmi = win32com.client.Dispatch("WbemScripting.SWbemLocator")
+                svc = wmi.ConnectServer(".", "root\\cimv2")
+                devices = svc.ExecQuery("SELECT * FROM Win32_PnPEntity WHERE PNPClass='Bluetooth'")
+
+                device_connected = False
+                for d in devices:
+                    fetchid = f"{d.DeviceID}"
+                    print(fetchid)
                     if device_mac in fetchid:
-                        save_session()
-                        messagebox.showinfo("Success", "Login Successful and Device Connected!")
-           
-                        patient_data = fetch_patient_data()
-                        if patient_data:
-                            main_dash(root)  
-                        else:
-                            open_dashboard(root)  
+                        device_connected = True
+                        break  # Device found, no need to check further
+
+                if device_connected:
+                    save_session()
+                    messagebox.showinfo("Success", "Login Successful and Device Connected!")
+
+                    patient_data = fetch_patient_data()
+                    if patient_data:
+                        main_dash(root)
                     else:
-                        messagebox.showerror("Device Not Connected", "Your device is not connected.")
-                except Exception as e:
-                    print("Error reading device:", e)
+                        open_dashboard(root)
+                else:
+                    messagebox.showerror("Device Not Connected", "Your device is not connected.")
+
+            except Exception as e:
+                print("Error reading device:", e)
+    else:
+        messagebox.showerror("Error", "Incorrect username or password")
+
             
             
 def open_link(event=None):
@@ -671,4 +679,3 @@ def show_login():
 
 if __name__ == '__main__':
     show_login()
-
