@@ -7,10 +7,10 @@ It allows login, patient information management, and dashboard navigation, with 
 
 ## 🚀 Current Status
 
-- ✅ GUI completed (with CustomTkinter)  
-- ✅ Server completed (Flask backend ready)  
-- ✅ Bugs & errors fixed  
-- 🚧 Main Dashboard (partially done — only logout function implemented)  
+-  GUI completed (with CustomTkinter)  
+-  Server completed (Flask backend ready)  
+-  Bugs & errors fixed  
+-  Main Dashboard 
 - 🧠 AI integration planned for future updates  
 
 ---
