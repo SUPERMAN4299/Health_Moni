@@ -1,3 +1,14 @@
-flask==3.0.3
-requests==2.32.3
-customtkinter==5.2.2
+Flask
+requests
+customtkinter
+PyQt5
+PyQt6
+PySide5
+PySide6
+pyqtgraph
+Pillow
+numpy
+pandas
+matplotlib
+PyOpenGL
+PyOpenGL-accelerate
