@@ -17,11 +17,15 @@ DHT dht11(DHT11_PIN, DHT11_TYPE);
 // --- MAX30102 ---
 MAX30105 particleSensor;
 
+// --- Constants ---
+const char* filename = "/sensor_data.json";
+const long MAX_ENTRIES = 84600;
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  // SPIFFS Setup (file handling)
+  // SPIFFS Setup
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS Mount Failed");
     return;
@@ -32,9 +36,18 @@ void setup() {
 
   // MAX30102
   if (!particleSensor.begin(Wire, I2C_SPEED_STANDARD)) {
-    Serial.println("❌ MAX30102 not found!");
+    Serial.println("MAX30102 not found!");
   } else {
     particleSensor.setup();
+  }
+
+  // Initialize file if doesn't exist
+  if (!SPIFFS.exists(filename)) {
+    File file = SPIFFS.open(filename, FILE_WRITE);
+    if(file){
+      file.print("[]"); // empty JSON array
+      file.close();
+    }
   }
 }
 
@@ -52,22 +65,50 @@ void loop() {
   long irValue = particleSensor.getIR();
   long redValue = particleSensor.getRed();
 
-  // --- Create JSON ---
-  StaticJsonDocument<256> doc;
-  doc["Temperature"] = isnan(tempDHT11) ? 0 : tempDHT11;
-  doc["Humidity"] = isnan(humDHT11) ? 0 : humDHT11;
-  doc["HQ07"] = voltageHQ07;
-  doc["GSR"] = voltageGSR;
-  doc["Heartbeat_IR"] = irValue;
-  doc["Heartbeat_Red"] = redValue;
+  // --- Load existing JSON file ---
+  File file = SPIFFS.open(filename, FILE_READ);
+  StaticJsonDocument<10240> doc; // increase size for many entries
+  JsonArray arr;
 
-  // --- Write JSON to file ---
-  File file = SPIFFS.open("/sensor_data.json", FILE_WRITE);
   if(file){
-    serializeJson(doc, file);
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+    if(error){
+      arr = doc.to<JsonArray>();
+    } else {
+      arr = doc.as<JsonArray>();
+    }
+  } else {
+    arr = doc.to<JsonArray>();
+  }
+
+  // --- Create new entry ---
+  StaticJsonDocument<256> entry;
+  entry["Temperature"] = isnan(tempDHT11) ? 0 : tempDHT11;
+  entry["Humidity"] = isnan(humDHT11) ? 0 : humDHT11;
+  entry["HQ07"] = voltageHQ07;
+  entry["GSR"] = voltageGSR;
+  entry["Heartbeat_IR"] = irValue;
+  entry["Heartbeat_Red"] = redValue;
+
+  // --- Add entry with circular buffer logic ---
+  if(arr.size() < MAX_ENTRIES){
+    arr.add(entry);  // just append if not full
+  } else {
+    // overwrite oldest entry (index 0) and shift array
+    for (size_t i = 0; i < arr.size() - 1; i++){
+      arr[i] = arr[i + 1];
+    }
+    arr[MAX_ENTRIES - 1] = entry;
+  }
+
+  // --- Write updated array back to file ---
+  file = SPIFFS.open(filename, FILE_WRITE);
+  if(file){
+    serializeJson(arr, file);
     file.close();
   } else {
-    Serial.println("❌ Failed to open file for writing");
+    Serial.println("Failed to open file for writing");
   }
 
   delay(2000); // every 2 seconds
