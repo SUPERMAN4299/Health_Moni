@@ -1,4 +1,4 @@
-# 🏥 Health Monitoring & Patient Dashboard
+# 🏥 Health Monitoring & Patient Dashboard (.md not updated)
 
 This project is a **Health Monitoring & Patient Management System** built with **Python, Flask, CustomTkinter, and PyQtGraph**. It enables secure login, patient data collection, health condition monitoring, real-time graph visualization, and server communication for storing/retrieving patient records.
 
