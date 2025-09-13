@@ -52,7 +52,7 @@ void setup() {
 }
 
 void loop() {
-  // --- Read Sensors ---
+  // --- Read Sensors Data ---
   float tempDHT11 = dht11.readTemperature();
   float humDHT11  = dht11.readHumidity();
 
@@ -65,7 +65,7 @@ void loop() {
   long irValue = particleSensor.getIR();
   long redValue = particleSensor.getRed();
 
-  // --- Load existing JSON file ---
+  // ---  JSON file (file handling) ---
   File file = SPIFFS.open(filename, FILE_READ);
   StaticJsonDocument<10240> doc; // increase size for many entries
   JsonArray arr;
@@ -82,7 +82,6 @@ void loop() {
     arr = doc.to<JsonArray>();
   }
 
-  // --- Create new entry ---
   StaticJsonDocument<256> entry;
   entry["Temperature"] = isnan(tempDHT11) ? 0 : tempDHT11;
   entry["Humidity"] = isnan(humDHT11) ? 0 : humDHT11;
@@ -91,11 +90,11 @@ void loop() {
   entry["Heartbeat_IR"] = irValue;
   entry["Heartbeat_Red"] = redValue;
 
-  // --- Add entry with circular buffer logic ---
+  // --- Add entry with on buffer logic ---
   if(arr.size() < MAX_ENTRIES){
     arr.add(entry);  // just append if not full
   } else {
-    // overwrite oldest entry (index 0) and shift array
+    // overwrite oldest entry 
     for (size_t i = 0; i < arr.size() - 1; i++){
       arr[i] = arr[i + 1];
     }
