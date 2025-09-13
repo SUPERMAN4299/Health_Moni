@@ -3,14 +3,14 @@ import json
 
 app = Flask(__name__)
 
-# Load JSON file once when server starts
+
 with open("security.json", "r") as f:
     vars = json.load(f)
 
-# Store uploaded JSON here
+# json variable 
 stored_data = {}
 
-# Upload + Get JSON
+# Uploading
 @app.route('/patient-data1', methods=['GET', 'POST'])
 def patient_d():
     global stored_data
@@ -20,7 +20,6 @@ def patient_d():
             return jsonify({"message": "No JSON uploaded yet"}), 200
         return jsonify({"stored_data": stored_data}), 200
 
-    # 👉 POST request: upload JSON file
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
  
@@ -31,11 +30,10 @@ def patient_d():
     except Exception as e:
         return jsonify({"error": f"Invalid JSON - {e}"}), 400
 
-    print("✅ Stored JSON:", stored_data)
+    print(" Stored JSON:", stored_data)
     return jsonify({"stored": stored_data}), 200
 
 
-# Get a single key
 @app.route("/get/<key>", methods=["GET"])
 def get_value(key):
     global stored_data
@@ -50,7 +48,7 @@ def get_value(key):
 
 @app.route('/s1')
 def get_string():
-    return f"{vars['stored_user_enc']}{vars['stored_pass_enc']}{vars['stored_mac_enc']}"
+    return f"{vars['stored_user_enc']}{vars['stored_pass_enc']}{vars['stored_ip_enc']}"
 
 
 @app.route("/query")
