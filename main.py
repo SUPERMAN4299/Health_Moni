@@ -1,7 +1,11 @@
-import win32com.client
-import pythoncom
 from flask import Flask
+import asyncio
+import csv
+from collections import deque
+import openai
+from bleak import BleakScanner, BleakClient
 import requests
+import socket
 import time
 import customtkinter as ctk
 from tkinter import messagebox
@@ -34,7 +38,6 @@ def hex_decode(hex_text: str) -> str:
         return ""
 
 
-
 # ---------------- Configurations ---------------- #
 SESSION_FILE = "session.txt"
 PATIENT_FILE = "patient_data1.json"
@@ -47,44 +50,19 @@ try:
     sec = s[0:10]
     sec1 = s[10:20]
     sec2 = s[20:124]
+    sec3 = s[124:159]
 
     stored_user_enc = hex_decode(sec)
     stored_pass_enc = hex_decode(sec1)
-    device_mac = str(hex_decode(sec2).replace(":", "").replace("-", ""))
+    #stored_ip_enc = str(hex_decode(sec2).replace(":", "").replace("-", ""))   
+    stored_ip_enc = str(hex_decode(sec2))
 
 except Exception as e:
     print("Error loading credentials:", e)
-    stored_user_enc = stored_pass_enc = device_mac = ""
+    stored_user_enc = stored_pass_enc = stored_ip_enc = ""
 
 
 os_name = os.name
-
-try:
-    if os_name == "nt":  # Windows
-        wmi = win32com.client.Dispatch("WbemScripting.SWbemLocator")
-        svc = wmi.ConnectServer(".", "root\\cimv2")
-        devices = svc.ExecQuery("SELECT * FROM Win32_PnPEntity WHERE PNPClass='Bluetooth'")
-
-        for d in devices:
-            try:
-                 # Debug: print device info
-                fetchid =f"{d.DeviceID}"
-                #print(fetchid)
-                '''s
-                    if hasattr(d, "DeviceID") and hasattr(d, "Status"):
-                        if d.Status == "OK" and "BluetoothDevice_" in d.DeviceID:
-                            m = re.search(r'BluetoothDevice_([0-9A-Fa-f]{12})', d.DeviceID)
-                            if m:
-                                mac = ":".join([m.group(1)[i:i+2] for i in range(0, 12, 2)])
-                                macs.append(mac.lower())
-                                print(f"Extracted MAC: {mac.lower()}")  # Debug
-                '''
-            except Exception as e:
-                print("Error reading device:", e)
-
-except Exception as e:
-        print("Error fetching Bluetooth devices:", e)
-
 
 
 # ---------------- Session Handling ---------------- #
@@ -223,6 +201,8 @@ def upload_data(master, data):
 
     return None
 
+# ---------- Taking Data from server -------- #
+
 def fetch_patient_data():
     try:
         # 1. Check local file
@@ -233,7 +213,7 @@ def fetch_patient_data():
                     return data
 
         # 2. Check server
-        url = SERVER_URL.replace("/patient-data1", "/get-patient-data1")  # adjust route
+        url = SERVER_URL.replace("/patient-data1", "/get-patient-data1")  # adjesment of routing 
         res = requests.get(url, timeout=5)
         if res.status_code == 200:
             data = res.json()
@@ -256,9 +236,22 @@ def logout(master):
     show_login_widgets(master)
 
 
+
+
+# ------------ Taking data from ESP32 ------------- #
+
+def analyze_data(sensor_data):
+    pass
+
+
+
+# ------------ Artificial Intelegence ------------ #
+
+##################################################################
+
 # ---------------- GUI Windows ---------------- #
 # ---------------- Utilites ---------------- #
-PRIMARY_DARK_COLOR = "#1c1c1c"
+PRIMARY_DARK_COLOR = "#101010"
 SECONDARY_DARK_COLOR = "#2b2b2b"
 TEXT_COLOR_PRIMARY = "white"
 TEXT_COLOR_SECONDARY = "#999999"
@@ -295,18 +288,26 @@ STATUS_LABEL_HEIGHT = 20
 PADDING_X = 20
 PADDING_Y = 20
 CARD_INNER_PADDING = 20
-CARD_SPACING = 15
+CARD_SPACING = 20
 
 # ---------------- Status ---------------- #
 STATUS_GOOD = "GOOD"
 STATUS_WARNING = "WARNING"
 STATUS_CRITICAL = "CRITICAL"
 
+# ---------------- Taking data from sensor ---------------- #
+
+HEART_DATA = 97
+AIR_QUA_DATA = 20
+GSR_DATA = 21
+TEMP_DATA = 34
+
 # ---------------- Icons ---------------- #
 ICON_HEART = "❤️"
 ICON_AIR_QUALITY = "💨"
 ICON_GSR = "⚡"
 ICON_TEMP = "🌡️"
+ICON_TRENDS = "📈"
 
 # ---------------- Units ---------------- #
 UNIT_BPM = "BPM"
@@ -317,6 +318,41 @@ UNIT_CELSIUS = "°C"
 # ---------------- Window ---------------- #
 DEFAULT_WINDOW_SIZE = "800x500"
 
+# -------------- Conditions for Level data -------------- #
+
+def condition_heart_rate(hr):
+    if 60 <= hr <= 100:
+        return STATUS_GOOD
+    elif 101 <= hr <= 120 or 50 <= hr < 60:
+        return STATUS_WARNING
+    else:
+        return STATUS_CRITICAL
+    
+def condition_aqi(aqi):
+    if 0 <= aqi <= 50:
+        return STATUS_GOOD
+    elif 51 <= aqi <= 100:
+        return STATUS_WARNING
+    else:
+        return STATUS_CRITICAL
+    
+def condition_gsr(gsr):
+    if 0 <= gsr <= 50:
+        return STATUS_GOOD
+    elif 51 <= gsr <= 100:
+        return STATUS_WARNING
+    else:
+        return STATUS_CRITICAL
+
+def condition_temp(temp):
+    if 36 <= temp <= 37.5:
+        return STATUS_GOOD
+    elif 37.6 <= temp <= 38.5 or 35 <= temp < 36:
+        return STATUS_WARNING
+    else:
+        return STATUS_CRITICAL
+    
+
 # ---------------- Graph Window ---------------- #
 def run_graph():
     app = QtWidgets.QApplication.instance()
@@ -324,7 +360,7 @@ def run_graph():
         app = QtWidgets.QApplication(sys.argv)
 
     win = pg.plot()
-    win.setWindowTitle("Plotting Example")
+    win.setWindowTitle("Heart Rate")
     data1 = np.zeros(380)
     curve1 = win.plot(data1, pen="w")
     win.setXRange(200, 380)
@@ -390,13 +426,6 @@ def main_dash(master):
     main_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
     main_frame.grid_rowconfigure((0, 1), weight=1)
 
-    logout_button = ctk.CTkButton(main_frame, text="Logout",
-                                  command=lambda: logout(master),
-                                  fg_color="red", text_color="white",
-                                  hover_color="#cc0000",
-                                  font=ctk.CTkFont(size=FONT_SIZE_MEDIUM, weight="bold"))
-    logout_button.place(relx=1.0, rely=0.0, x=-PADDING_X, y=PADDING_Y, anchor="ne")
-
     # ----------------- Metric Card ----------------- #
     def create_metric(parent, col, icon, title, value, unit, status, color, width=STATUS_LABEL_WIDTH):
         frame = ctk.CTkFrame(parent, fg_color=STAT_CARD_BG, corner_radius=CORNER_RADIUS_MEDIUM)
@@ -431,10 +460,10 @@ def main_dash(master):
                      text_color=TEXT_COLOR_PRIMARY).pack(padx=5, pady=2)
 
     # Add health metrics
-    create_metric(main_frame, 0, ICON_HEART, "Heart Rate", "72", UNIT_BPM, STATUS_GOOD, SUCCESS_COLOR)
-    create_metric(main_frame, 1, ICON_AIR_QUALITY, "Air Quality Index", "35", UNIT_AQI, STATUS_GOOD, SUCCESS_COLOR)
-    create_metric(main_frame, 2, ICON_GSR, "GSR", "38.1", UNIT_MICROS, STATUS_WARNING, WARNING_COLOR, width=70)
-    create_metric(main_frame, 3, ICON_TEMP, "Temperature", "15.8", UNIT_CELSIUS, STATUS_CRITICAL, CRITICAL_COLOR, width=60)
+    create_metric(main_frame, 0, ICON_HEART, "Heart Rate", HEART_DATA, UNIT_BPM, condition_heart_rate, SUCCESS_COLOR)
+    create_metric(main_frame, 1, ICON_AIR_QUALITY, "Air Quality Index", AIR_QUA_DATA, UNIT_AQI, condition_aqi, SUCCESS_COLOR)
+    create_metric(main_frame, 2, ICON_GSR, "GSR", GSR_DATA, UNIT_MICROS, STATUS_WARNING, condition_gsr, width=70)
+    create_metric(main_frame, 3, ICON_TEMP, "Temperature", TEMP_DATA, UNIT_CELSIUS, STATUS_CRITICAL, condition_temp, width=60)
 
     # ----------------- Bottom Section ----------------- #
     # Prescription (left)
@@ -454,11 +483,11 @@ def main_dash(master):
                  font=ctk.CTkFont(size=FONT_SIZE_MEDIUM, weight="bold"),
                  text_color=TEXT_COLOR_PRIMARY).pack(anchor="w")
 
-    prescription_text = """Take ECOSPRIN-AV 75/20 Capsule,
+    prescription_text = """Take ECOSPRIN-AV 75/20 Capsule,  
 and DRL cardiovascular 100mg
 Tablet(white) every 3 hours.
 Monitor vitals daily. Consult
-physician."""
+physician."""           # Have to generated by AI
 
     content_label = ctk.CTkLabel(prescription_frame, text=prescription_text,
                                  font=ctk.CTkFont(size=FONT_SIZE_SMALL),
@@ -466,22 +495,29 @@ physician."""
                                  justify="left")
     content_label.pack(anchor="w", padx=CARD_INNER_PADDING, pady=(5, CARD_INNER_PADDING))
 
-    # Trends (right)
+
     trends_frame = ctk.CTkFrame(main_frame, fg_color=PANEL_BG, corner_radius=CORNER_RADIUS_MEDIUM)
     trends_frame.grid(row=1, column=2, columnspan=2, padx=CARD_SPACING, pady=CARD_SPACING, sticky="nsew")
     trends_frame.grid_columnconfigure(0, weight=1)
     trends_frame.grid_rowconfigure(0, weight=1)
     trends_frame.configure(border_width=1, border_color="#3a3a3a")
 
-    ctk.CTkLabel(trends_frame, text="Health Trends",
+    trends_header_frame = ctk.CTkFrame(trends_frame, fg_color="transparent")
+    trends_header_frame.pack(pady=(CARD_INNER_PADDING, CARD_INNER_PADDING // 2))
+
+    ctk.CTkLabel(trends_header_frame, text=ICON_TRENDS,
+                 font=ctk.CTkFont(size=FONT_SIZE_MEDIUM),
+                 text_color=ICON_COLOR).pack(side="left", padx=(0, 5))
+    ctk.CTkLabel(trends_header_frame, text="Health Trends",
                  font=ctk.CTkFont(size=FONT_SIZE_MEDIUM, weight="bold"),
-                 text_color=TEXT_COLOR_PRIMARY).pack(pady=(CARD_INNER_PADDING, CARD_INNER_PADDING // 2))
+                 text_color=TEXT_COLOR_PRIMARY).pack(side="left")
 
     launch_btn = ctk.CTkButton(trends_frame, text="Launch Graph",
                                font=ctk.CTkFont(size=13, weight="bold"),
                                fg_color=(GRADIENT_START, GRADIENT_END),
                                hover_color=(BUTTON_BLUE_HOVER_DARK, BUTTON_BLUE_DARK),
                                width=BUTTON_WIDTH, height=BUTTON_HEIGHT, corner_radius=CORNER_RADIUS_LARGE,
+                               text_color=TEXT_COLOR_PRIMARY,
                                command=launch_graph)
     launch_btn.pack(pady=(0, CARD_INNER_PADDING))
 
@@ -493,7 +529,11 @@ physician."""
     ctk.CTkLabel(refresh_frame, text="2 minutes ago",
                  font=ctk.CTkFont(size=9), text_color="#888888").pack()
 
-
+    logout_button = ctk.CTkButton(master, text="Logout",
+                                  command=lambda: logout(master),
+                                  fg_color="red", hover_color="#cc0000",
+                                  text_color=TEXT_COLOR_PRIMARY)
+    logout_button.place(relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
 
 
 def open_dashboard(master):
@@ -568,51 +608,41 @@ def open_dashboard(master):
                                  fg_color="#ff4444", hover_color="#ff6666")
     clear_button.pack(side="left", padx=10)
 
-    logout_button = ctk.CTkButton(master, text="Logout",
-                                  command=lambda: logout(master),
-                                  fg_color="red", hover_color="#cc0000")
-    logout_button.place(relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
 
 # ---------------- Login ---------------- #
 def submit():
     username = entry_user.get()
     password = entry_pass.get()
-
+    ip_local = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
     if not username or not password:
         messagebox.showerror("Error", "Please enter username and password")
-        return
+        return    
+    
+
 
     if username == stored_user_enc and password == stored_pass_enc:
-        if os_name == "nt":  # Windows
-            try:
-                wmi = win32com.client.Dispatch("WbemScripting.SWbemLocator")
-                svc = wmi.ConnectServer(".", "root\\cimv2")
-                devices = svc.ExecQuery("SELECT * FROM Win32_PnPEntity WHERE PNPClass='Bluetooth'")
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as ip_local:
+                ip_local.connect(("8.8.8.8", 80))
+                local_ip = ip_local.getsockname()[0]
 
-                device_connected = False
-                for d in devices:
-                    fetchid = f"{d.DeviceID}"
-                    print(fetchid)
-                    if device_mac in fetchid:
-                        device_connected = True
-                        break  # Device found, no need to check further
-
-                if device_connected:
-                    save_session()
-                    messagebox.showinfo("Success", "Login Successful and Device Connected!")
-
-                    patient_data = fetch_patient_data()
-                    if patient_data:
-                        main_dash(root)
-                    else:
-                        open_dashboard(root)
+            if stored_ip_enc == local_ip:
+                save_session()
+                messagebox.showinfo("Success", f"Login Successful! Device is Connected")
+                patient_data = fetch_patient_data()
+                if patient_data:
+                    main_dash(root)
                 else:
-                    messagebox.showerror("Device Not Connected", "Your device is not connected.")
-
-            except Exception as e:
-                print("Error reading device:", e)
+                    open_dashboard(root)
+            else:
+                messagebox.showerror("Your device is not connected by via network.")
+        except Exception as e:
+            pass
+            messagebox.showerror("Error! Something went wrong.")
     else:
-        messagebox.showerror("Error", "Incorrect username or password")
+        messagebox.showerror("Error", "Incorrect username or password")        
+
 
             
             
@@ -622,7 +652,7 @@ def open_link(event=None):
 def show_login_widgets(master_window):
     global entry_user, entry_pass
     master_window.title("Login Page")
-    master_window.geometry("500x550")
+    master_window.geometry("600x550") 
     master_window.resizable(False, False)
     master_window.configure(bg="black")
 
