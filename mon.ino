@@ -3,11 +3,11 @@
 #include "MAX30105.h"
 #include <ArduinoJson.h>
 
-// --- WiFi AP Setup ---
+// --- WiFi AP ---
 const char* ssid     = "uPesy_AP";
 const char* password = "super_strong_password";
 
-// --- DHT11 Setup ---
+// --- DHT11 ---
 #define DHT11_PIN 4
 #define DHT11_TYPE DHT11
 DHT dht11(DHT11_PIN, DHT11_TYPE);
@@ -19,33 +19,31 @@ DHT dht11(DHT11_PIN, DHT11_TYPE);
 // --- MAX30102 ---
 MAX30105 particleSensor;
 
+// --- Web server ---
+WiFiServer server(80);
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  // WiFi AP
-  Serial.println("\n[*] Creating AP...");
   WiFi.mode(WIFI_AP);
   WiFi.softAP(ssid, password);
-  Serial.print("[+] AP Created with IP: ");
-  Serial.println(WiFi.softAPIP());
+  Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
 
-  // DHT11
+  server.begin();
+
   dht11.begin();
 
-  // MAX30102
   if (!particleSensor.begin(Wire, I2C_SPEED_STANDARD)) {
-    Serial.println("❌ MAX30102 not found!");
+    Serial.println("MAX30102 not found!");
   } else {
-    Serial.println("[+] MAX30102 detected!");
     particleSensor.setup();
   }
 }
 
-void loop() {
-  // --- Read Sensors ---
-  float tempDHT11 = dht11.readTemperature();
-  float humDHT11  = dht11.readHumidity();
+String createJSON() {
+  float temp = dht11.readTemperature();
+  float hum = dht11.readHumidity();
 
   int rawHQ07 = analogRead(HQ07_AOUT);
   float voltageHQ07 = (rawHQ07 / 4095.0) * 3.3;
@@ -56,18 +54,39 @@ void loop() {
   long irValue = particleSensor.getIR();
   long redValue = particleSensor.getRed();
 
-  // --- Create JSON ---
   StaticJsonDocument<256> doc;
-  doc["Temperature"] = isnan(tempDHT11) ? 0 : tempDHT11;
-  doc["Humidity"] = isnan(humDHT11) ? 0 : humDHT11;
+  doc["Temperature"] = isnan(temp) ? 0 : temp;
+  doc["Humidity"] = isnan(hum) ? 0 : hum;
   doc["HQ07"] = voltageHQ07;
   doc["GSR"] = voltageGSR;
-  doc["Heartbeat_IR"] = irValue;   //For heartbeat
-  doc["Heartbeat_Red"] = redValue;   //For SpO2
+  doc["Heartbeat_IR"] = irValue;
+  doc["Heartbeat_Red"] = redValue;
 
-  // --- Print JSON ---
-  serializeJsonPretty(doc, Serial);
-  Serial.println("\n-------------------------");
+  String jsonStr;
+  serializeJson(doc, jsonStr);
+  return jsonStr;
+}
 
-  delay(2000);
+void loop() {
+  WiFiClient client = server.available();
+  if (client) {
+    String currentLine = "";
+    while (client.connected()) {
+      if (client.available()) {
+        char c = client.read();
+        if (c == '\n') {
+          client.println("HTTP/1.1 200 OK");
+          client.println("Content-type: application/json");
+          client.println("Connection: close");
+          client.println();
+          client.println(createJSON());
+          break;
+        }
+      }
+    }
+    delay(1);
+    client.stop();
+  }
+
+  delay(2000); // update every 2 seconds
 }
