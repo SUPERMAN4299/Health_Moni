@@ -1,78 +1,138 @@
-import json
-import time
-import os
+#include <WiFi.h>
+#include "DHT.h"
+#include "MAX30105.h"
+#include <ArduinoJson.h>
+#include "FS.h"
+#include "SPIFFS.h"
 
-# --- File path to the JSON data from ESP32 ---
-filename = "sensor_data.json"
+// --- DHT11 Setup ---
+#define DHT11_PIN 4
+#define DHT11_TYPE DHT11
+DHT dht11(DHT11_PIN, DHT11_TYPE);
 
-# --- Max entries (same as ESP32) ---
-MAX_ENTRIES = 84600
+// --- Analog Sensors ---
+#define HQ07_AOUT 34
+#define GSR_PIN   35
 
-# --- Refresh interval (seconds) ---
-REFRESH_INTERVAL = 2
+// --- MAX30102 ---
+MAX30105 particleSensor;
 
-# --- State memory ---
-last_entry = None
-last_count = 0
-device_connected = True
+// --- Constants ---
+const char* filename = "/sensor_data.json";
+const long MAX_ENTRIES = 84600;
 
+// --- Globals ---
+long currentIndex = 0;  // to remember position
 
-def read_sensor_data():
-    """Read sensor data from JSON if available, else return None."""
-    if not os.path.exists(filename):
-        return None
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
 
-    try:
-        with open(filename, "r") as f:
-            data = json.load(f)
-        if not data:
-            return None
-        return data
-    except json.JSONDecodeError:
-        # Happens if ESP32 is still writing to the file
-        return None
+  // SPIFFS Setup
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS Mount Failed");
+    return;
+  }
 
+  // DHT11
+  dht11.begin();
 
-# --- Main loop ---
-while True:
-    sensor_data = read_sensor_data()
+  // MAX30102
+  if (!particleSensor.begin(Wire, I2C_SPEED_STANDARD)) {
+    Serial.println("MAX30102 not found!");
+  } else {
+    particleSensor.setup();
+  }
 
-    if sensor_data:
-        total_entries = len(sensor_data)
-        last = sensor_data[-1]
+  // Initialize file if doesn't exist
+  if (!SPIFFS.exists(filename)) {
+    File file = SPIFFS.open(filename, FILE_WRITE);
+    if (file) {
+      file.print("[]"); // empty JSON array
+      file.close();
+      currentIndex = 0;
+    }
+  } else {
+    // If file exists, find how many entries already stored
+    File file = SPIFFS.open(filename, FILE_READ);
+    if (file) {
+      StaticJsonDocument<10240> doc;
+      DeserializationError error = deserializeJson(doc, file);
+      file.close();
 
-        # Detect new data (file grew)
-        if total_entries > last_count:
-            device_connected = True
-            last_entry = last
-            last_count = total_entries
+      if (!error) {
+        JsonArray arr = doc.as<JsonArray>();
+        currentIndex = arr.size();  // resume from here
+        Serial.print("Resuming at index: ");
+        Serial.println(currentIndex);
+      }
+    }
+  }
+}
 
-            print("------ Latest Sensor Data ------")
-            print(f"Temperature: {last['Temperature']} °C")
-            print(f"Humidity:    {last['Humidity']} %")
-            print(f"HQ07:        {last['HQ07']} V")
-            print(f"GSR:         {last['GSR']} V")
-            print("--------------------------------")
+void loop() {
+  // --- Read Sensors ---
+  float tempDHT11 = dht11.readTemperature();
+  float humDHT11  = dht11.readHumidity();
 
-            if total_entries < MAX_ENTRIES:
-                print(f"Appended new entry. Total entries: {total_entries}\n")
-            else:
-                print(f"Overwrote oldest entry. Buffer full ({MAX_ENTRIES} entries)\n")
+  int rawHQ07 = analogRead(HQ07_AOUT);
+  float voltageHQ07 = (rawHQ07 / 4095.0) * 3.3;
 
-        else:
-            # No new entries since last check
-            if last_entry:
-                if device_connected:
-                    print("Device not connected. Holding last values:\n")
-                    print("------ Last Known Sensor Data ------")
-                    print(f"Temperature: {last_entry['Temperature']} °C")
-                    print(f"Humidity:    {last_entry['Humidity']} %")
-                    print(f"HQ07:        {last_entry['HQ07']} V")
-                    print(f"GSR:         {last_entry['GSR']} V")
-                    print("--------------------------------\n")
-                device_connected = False
+  int rawGSR = analogRead(GSR_PIN);
+  float voltageGSR = (rawGSR / 4095.0) * 3.3;
 
-    else:
-        print("No sensor data file found (waiting for ESP32 to update JSON)\n")
+  long irValue = particleSensor.getIR();
+  long redValue = particleSensor.getRed();
 
-    time.sleep(REFRESH_INTERVAL)
+  // --- Load existing JSON file ---
+  File file = SPIFFS.open(filename, FILE_READ);
+  StaticJsonDocument<10240> doc;
+  JsonArray arr;
+
+  if (file) {
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+    if (error) {
+      arr = doc.to<JsonArray>();
+    } else {
+      arr = doc.as<JsonArray>();
+    }
+  } else {
+    arr = doc.to<JsonArray>();
+  }
+
+  // --- Create new entry ---
+  StaticJsonDocument<256> entry;
+  entry["Temperature"]   = isnan(tempDHT11) ? 0 : tempDHT11;
+  entry["Humidity"]      = isnan(humDHT11) ? 0 : humDHT11;
+  entry["HQ07"]          = voltageHQ07;
+  entry["GSR"]           = voltageGSR;
+  entry["Heartbeat_IR"]  = irValue;
+  entry["Heartbeat_Red"] = redValue;
+
+  // --- Add entry (circular buffer logic) ---
+  if (arr.size() < MAX_ENTRIES) {
+    arr.add(entry);  // append if not full
+    currentIndex++;
+  } else {
+    // overwrite oldest entry
+    for (size_t i = 0; i < arr.size() - 1; i++) {
+      arr[i] = arr[i + 1];
+    }
+    arr[MAX_ENTRIES - 1] = entry;
+  }
+
+  // --- Write updated array back to file ---
+  file = SPIFFS.open(filename, FILE_WRITE);
+  if (file) {
+    serializeJson(arr, file);
+    file.close();
+  } else {
+    Serial.println("Failed to open file for writing");
+  }
+
+  Serial.print("Stored entry at index: ");
+  Serial.println(currentIndex);
+
+  delay(2000); // every 2 seconds
+}
