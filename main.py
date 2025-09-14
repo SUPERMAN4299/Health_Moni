@@ -364,8 +364,10 @@ while True:
                     TEMP_DATA = last_entry['Temperature']
                 connection()
     else:
-        print("No sensor data file found (waiting for ESP32 to update JSON)\n")
-
+        pass
+        #main_dash(master)
+        #messagebox.showerror("Error","Start Your device")
+        #break
     time.sleep(REFRESH_INTERVAL)
 
 
@@ -669,6 +671,10 @@ physician."""
             metrics_refs["Temperature"]["status"].configure(text=temp_status)
             metrics_refs["Temperature"]["badge"].configure(fg_color=status_to_color(temp_status))
 
+        else:
+        # Device not connected 
+            messagebox.showerror("Device Status", "Device is not connected!")
+            time.sleep(10)
         master.after(REFRESH_INTERVAL * 1000, update_live_data)
 
     # Start live updates
