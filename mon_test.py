@@ -1,53 +1,78 @@
 import json
-import matplotlib.pyplot as plt
+import time
+import os
 
 # --- File path to the JSON data from ESP32 ---
 filename = "sensor_data.json"
 
-# --- Load JSON data ---
-with open(filename, 'r') as f:
-    data = json.load(f)
+# --- Max entries (same as ESP32) ---
+MAX_ENTRIES = 84600
 
-# --- Extract sensor values ---
-temperature = [entry["Temperature"] for entry in data]
-humidity    = [entry["Humidity"] for entry in data]
-hq07        = [entry["HQ07"] for entry in data]
-gsr         = [entry["GSR"] for entry in data]
+# --- Refresh interval (seconds) ---
+REFRESH_INTERVAL = 2
 
-# Optional: if data is huge, take only last N points for plotting
-N = 500  # last 500 readings
-temperature = temperature[-N:]
-humidity    = humidity[-N:]
-hq07        = hq07[-N:]
-gsr         = gsr[-N:]
+# --- State memory ---
+last_entry = None
+last_count = 0
+device_connected = True
 
-# --- Create 4 subplots ---
-fig, axs = plt.subplots(2, 2, figsize=(12, 8))
-fig.suptitle("ESP32 Sensor Data")
 
-# Temperature
-axs[0, 0].plot(temperature, color='r')
-axs[0, 0].set_title("Temperature (°C)")
-axs[0, 0].set_xlabel("Reading")
-axs[0, 0].set_ylabel("°C")
+def read_sensor_data():
+    """Read sensor data from JSON if available, else return None."""
+    if not os.path.exists(filename):
+        return None
 
-# Humidity
-axs[0, 1].plot(humidity, color='b')
-axs[0, 1].set_title("Humidity (%)")
-axs[0, 1].set_xlabel("Reading")
-axs[0, 1].set_ylabel("%")
+    try:
+        with open(filename, "r") as f:
+            data = json.load(f)
+        if not data:
+            return None
+        return data
+    except json.JSONDecodeError:
+        # Happens if ESP32 is still writing to the file
+        return None
 
-# HQ07 voltage
-axs[1, 0].plot(hq07, color='g')
-axs[1, 0].set_title("HQ07 Voltage (V)")
-axs[1, 0].set_xlabel("Reading")
-axs[1, 0].set_ylabel("V")
 
-# GSR voltage
-axs[1, 1].plot(gsr, color='m')
-axs[1, 1].set_title("GSR Voltage (V)")
-axs[1, 1].set_xlabel("Reading")
-axs[1, 1].set_ylabel("V")
+# --- Main loop ---
+while True:
+    sensor_data = read_sensor_data()
 
-plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-plt.show()
+    if sensor_data:
+        total_entries = len(sensor_data)
+        last = sensor_data[-1]
+
+        # Detect new data (file grew)
+        if total_entries > last_count:
+            device_connected = True
+            last_entry = last
+            last_count = total_entries
+
+            print("------ Latest Sensor Data ------")
+            print(f"Temperature: {last['Temperature']} °C")
+            print(f"Humidity:    {last['Humidity']} %")
+            print(f"HQ07:        {last['HQ07']} V")
+            print(f"GSR:         {last['GSR']} V")
+            print("--------------------------------")
+
+            if total_entries < MAX_ENTRIES:
+                print(f"Appended new entry. Total entries: {total_entries}\n")
+            else:
+                print(f"Overwrote oldest entry. Buffer full ({MAX_ENTRIES} entries)\n")
+
+        else:
+            # No new entries since last check
+            if last_entry:
+                if device_connected:
+                    print("Device not connected. Holding last values:\n")
+                    print("------ Last Known Sensor Data ------")
+                    print(f"Temperature: {last_entry['Temperature']} °C")
+                    print(f"Humidity:    {last_entry['Humidity']} %")
+                    print(f"HQ07:        {last_entry['HQ07']} V")
+                    print(f"GSR:         {last_entry['GSR']} V")
+                    print("--------------------------------\n")
+                device_connected = False
+
+    else:
+        print("No sensor data file found (waiting for ESP32 to update JSON)\n")
+
+    time.sleep(REFRESH_INTERVAL)
