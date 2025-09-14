@@ -1,45 +1,82 @@
-import socket
-import matplotlib.pyplot as plt
+import json
+import time
+import os
+import shutil
 
-# ESP32 AP IP + port
-ESP32_IP = "192.168.4.1"
-ESP32_PORT = 3333
+# --- File path to the JSON data from ESP32 --- #
+filename = "sensor_data.json"
+tmp_filename = "sensor_data_tmp.json" 
 
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect((ESP32_IP, ESP32_PORT))
-print("Connected to ESP32")
+# --- Max entries (same as ESP32) --- #
+MAX_ENTRIES = 84600
 
-# Data buffers
-temps, voltages, mq7s, irs, reds = [], [], [], [], []
+# --- Refresh interval (seconds) --- #
+REFRESH_INTERVAL = 2
 
-plt.ion()
-fig, ax = plt.subplots()
+# --- State memory --- #
+last_entry = None
+last_count = 0
+device_connected = True
 
-while True:
-    data = client.recv(1024).decode().strip()
-    if not data:
-        continue
+
+def read_sensor_data():
+    """Read sensor data safely by copying to a temporary file first."""
+    if not os.path.exists(filename):
+        return None
+
     try:
-        values = data.split(",")
-        if len(values) != 11:  # we expect 11 values
-            continue
+        # Copy file to temporary location to avoid read/write conflict
+        shutil.copyfile(filename, tmp_filename)
+        with open(tmp_filename, "r") as f:
+            data = json.load(f)
+        if not data:
+            return None
+        return data
+    except (json.JSONDecodeError, IOError):
+        # Happens if ESP32 is writing while Python reads
+        return None
 
-        temp, tp, mq7, ir, red, accX, accY, accZ, gX, gY, gZ = map(float, values)
 
-        temps.append(temp)
-        voltages.append(tp)
-        mq7s.append(mq7)
-        irs.append(ir)
-        reds.append(red)
+# --- Main loop --- #
+while True:
+    sensor_data = read_sensor_data()
 
-        # --- Example graph: Temp + MQ7 + Battery ---
-        ax.clear()
-        ax.plot(temps, label="DS18B20 Temp (C)")
-        ax.plot(voltages, label="Battery (V)")
-        ax.plot(mq7s, label="MQ-7 Gas (V)")
-        ax.legend()
-        plt.pause(0.1)
+    if sensor_data:
+        total_entries = len(sensor_data)
+        last = sensor_data[-1]
 
-    except Exception as e:
-        print("Parse error:", e)
-        continue
+        # Detect new data (file grew)
+        if total_entries > last_count:
+            device_connected = True
+            last_entry = last
+            last_count = total_entries
+
+            print("------ Latest Sensor Data ------")
+            print(f"Temperature: {last['Temperature']} °C")
+            print(f"Humidity:    {last['Humidity']} %")
+            print(f"HQ07:        {last['HQ07']} V")
+            print(f"GSR:         {last['GSR']} V")
+            print("--------------------------------")
+
+            if total_entries < MAX_ENTRIES:
+                print(f"Appended new entry. Total entries: {total_entries}\n")
+            else:
+                print(f"Overwrote oldest entry. Buffer full ({MAX_ENTRIES} entries)\n")
+
+        else:
+            # No new entries since last check
+            if last_entry:
+                if device_connected:
+                    print("Device not connected. Holding last values:\n")
+                    print("------ Last Known Sensor Data ------")
+                    print(f"Temperature: {last_entry['Temperature']} °C")
+                    print(f"Humidity:    {last_entry['Humidity']} %")
+                    print(f"HQ07:        {last_entry['HQ07']} V")
+                    print(f"GSR:         {last_entry['GSR']} V")
+                    print("--------------------------------\n")
+                device_connected = False
+
+    else:
+        print("No sensor data file found or JSON incomplete (waiting for ESP32 to update)\n")
+
+    time.sleep(REFRESH_INTERVAL)
