@@ -238,13 +238,46 @@ def logout(master):
 
 
 
-# ------------ Taking data from ESP32 ------------- #
+# ------------ Taking sensor data in .json ------------- #
 
-def analyze_data(sensor_data):
-    pass
+filename = "sensor_data.json"
 
+# --- Max entries (same as ESP32) ---
+MAX_ENTRIES = 84600
 
+# --- Refresh interval (seconds) ---
+REFRESH_INTERVAL = 2
 
+# --- State memory ---
+last_entry = None
+last_count = 0
+
+with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as ip_local:
+    ip_local.connect(("8.8.8.8", 80))
+    local_ip = ip_local.getsockname()[0]
+
+def connection():
+    if local_ip == stored_ip_enc:
+        device_connected = True
+        return device_connected
+    else:
+        device_connected = False
+        return device_connected
+        
+
+def read_sensor_data():
+    if not os.path.exists(filename):
+        return None
+
+    try:
+        with open(filename, "r") as f:
+            data = json.load(f)
+        if not data:
+            return None
+        return data
+    except json.JSONDecodeError:
+        # Happens if ESP32 is still writing to the file
+        return None
 # ------------ Artificial Intelegence ------------ #
 
 ##################################################################
@@ -295,13 +328,48 @@ STATUS_GOOD = "GOOD"
 STATUS_WARNING = "WARNING"
 STATUS_CRITICAL = "CRITICAL"
 
-# ---------------- Taking data from sensor ---------------- #
+# ---------------- Main data (Live) ---------------- #
 
-HEART_DATA = 97
-AIR_QUA_DATA = 20
-GSR_DATA = 21
-TEMP_DATA = 34
+while True:
+    sensor_data = read_sensor_data()
 
+    if sensor_data:
+        total_entries = len(sensor_data)
+        last = sensor_data[-1]
+
+        # Detect new data (file grew)
+        if total_entries > last_count:
+            connection()
+            last_entry = last
+            last_count = total_entries
+
+            HEART_DATA = last['Heart_Rate']
+            AIR_QUA_DATA = last['AQI']
+            GSR_DATA = last['GSR']
+            TEMP_DATA = last['Temperature']
+            break
+
+            if total_entries < MAX_ENTRIES:
+                print(f"Appended new entry. Total entries: {total_entries}\n")
+            else:
+                print(f"Overwrote oldest entry. Buffer full ({MAX_ENTRIES} entries)\n")
+
+        else:
+            # No new entries since last check
+            if last_entry:
+                if connection():
+                    HEART_DATA = last_entry['Heart_Rate']
+                    AIR_QUA_DATA = last_entry['AQI']
+                    GSR_DATA = last_entry['GSR']
+                    TEMP_DATA = last_entry['Temperature']
+                connection()
+    else:
+        print("No sensor data file found (waiting for ESP32 to update JSON)\n")
+
+    time.sleep(REFRESH_INTERVAL)
+
+
+        
 # ---------------- Icons ---------------- #
 ICON_HEART = "❤️"
 ICON_AIR_QUALITY = "💨"
@@ -443,21 +511,27 @@ def main_dash(master):
                      text_color=TEXT_COLOR_SECONDARY).pack(side="left")
 
         # Value
-        ctk.CTkLabel(frame, text=value,
-                     font=ctk.CTkFont(size=FONT_SIZE_LARGE, weight="bold"),
-                     text_color=TEXT_COLOR_PRIMARY).pack(pady=(0, 5))
-        ctk.CTkLabel(frame, text=unit,
-                     font=ctk.CTkFont(size=FONT_SIZE_XSMALL),
-                     text_color=TEXT_COLOR_SECONDARY).pack()
+        value_label = ctk.CTkLabel(frame, text=value,
+                                   font=ctk.CTkFont(size=FONT_SIZE_LARGE, weight="bold"),
+                                   text_color=TEXT_COLOR_PRIMARY)
+        value_label.pack(pady=(0, 5))
+        unit_label = ctk.CTkLabel(frame, text=unit,
+                                  font=ctk.CTkFont(size=FONT_SIZE_XSMALL),
+                                  text_color=TEXT_COLOR_SECONDARY)
+        unit_label.pack()
 
         # Status badge
         badge = ctk.CTkFrame(frame, fg_color=color,
                              corner_radius=CORNER_RADIUS_SMALL,
                              width=width, height=STATUS_LABEL_HEIGHT)
         badge.pack(pady=(CARD_INNER_PADDING // 2, CARD_INNER_PADDING))
-        ctk.CTkLabel(badge, text=status,
-                     font=ctk.CTkFont(size=FONT_SIZE_XXSMALL, weight="bold"),
-                     text_color=TEXT_COLOR_PRIMARY).pack(padx=5, pady=2)
+        status_label = ctk.CTkLabel(badge, text=status,
+                                    font=ctk.CTkFont(size=FONT_SIZE_XXSMALL, weight="bold"),
+                                    text_color=TEXT_COLOR_PRIMARY)
+        status_label.pack(padx=5, pady=2)
+
+        # Return references for live update
+        return {"value": value_label, "status": status_label, "badge": badge}
 
     # ----------------- Status to Color ----------------- #
     def status_to_color(status):
@@ -468,21 +542,33 @@ def main_dash(master):
         else:
             return CRITICAL_COLOR
 
-    # Compute statuses
+    # Initial metric values
+    sensor_data = read_sensor_data()
+    if sensor_data:
+        last = sensor_data[-1]
+        HEART_DATA = last['Heart_Rate']
+        AIR_QUA_DATA = last['AQI']
+        GSR_DATA = last['GSR']
+        TEMP_DATA = last['Temperature']
+    else:
+        HEART_DATA = AIR_QUA_DATA = GSR_DATA = TEMP_DATA = 0
+
+    # Compute initial statuses
     hr_status = condition_heart_rate(HEART_DATA)
     aqi_status = condition_aqi(AIR_QUA_DATA)
     gsr_status = condition_gsr(GSR_DATA)
     temp_status = condition_temp(TEMP_DATA)
 
-    # Add health metrics
-    create_metric(main_frame, 0, ICON_HEART, "Heart Rate", HEART_DATA, UNIT_BPM,
-                  hr_status, status_to_color(hr_status))
-    create_metric(main_frame, 1, ICON_AIR_QUALITY, "Air Quality Index", AIR_QUA_DATA, UNIT_AQI,
-                  aqi_status, status_to_color(aqi_status))
-    create_metric(main_frame, 2, ICON_GSR, "GSR", GSR_DATA, UNIT_MICROS,
-                  gsr_status, status_to_color(gsr_status), width=70)
-    create_metric(main_frame, 3, ICON_TEMP, "Temperature", TEMP_DATA, UNIT_CELSIUS,
-                  temp_status, status_to_color(temp_status), width=60)
+    # ----------------- Create Metrics ----------------- #
+    metrics_refs = {}
+    metrics_refs["Heart Rate"] = create_metric(main_frame, 0, ICON_HEART, "Heart Rate", HEART_DATA, UNIT_BPM,
+                                              hr_status, status_to_color(hr_status))
+    metrics_refs["Air Quality Index"] = create_metric(main_frame, 1, ICON_AIR_QUALITY, "Air Quality Index",
+                                                     AIR_QUA_DATA, UNIT_AQI, aqi_status, status_to_color(aqi_status))
+    metrics_refs["GSR"] = create_metric(main_frame, 2, ICON_GSR, "GSR", GSR_DATA, UNIT_MICROS,
+                                        gsr_status, status_to_color(gsr_status), width=70)
+    metrics_refs["Temperature"] = create_metric(main_frame, 3, ICON_TEMP, "Temperature", TEMP_DATA, UNIT_CELSIUS,
+                                                temp_status, status_to_color(temp_status), width=60)
 
     # ----------------- Bottom Section ----------------- #
     # Prescription (left)
@@ -506,7 +592,7 @@ def main_dash(master):
 and DRL cardiovascular 100mg
 Tablet(white) every 3 hours.
 Monitor vitals daily. Consult
-physician."""           # Have to be generated by AI
+physician."""  
 
     content_label = ctk.CTkLabel(prescription_frame, text=prescription_text,
                                  font=ctk.CTkFont(size=FONT_SIZE_SMALL),
@@ -553,6 +639,40 @@ physician."""           # Have to be generated by AI
                                   text_color=TEXT_COLOR_PRIMARY)
     logout_button.place(relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
 
+    # ----------------- Live Update Function ----------------- #
+    def update_live_data():
+        sensor_data = read_sensor_data()
+        if sensor_data:
+            last = sensor_data[-1]
+
+            # Update Heart Rate
+            hr_status = condition_heart_rate(last['Heart_Rate'])
+            metrics_refs["Heart Rate"]["value"].configure(text=last['Heart_Rate'])
+            metrics_refs["Heart Rate"]["status"].configure(text=hr_status)
+            metrics_refs["Heart Rate"]["badge"].configure(fg_color=status_to_color(hr_status))
+
+            # Update AQI
+            aqi_status = condition_aqi(last['AQI'])
+            metrics_refs["Air Quality Index"]["value"].configure(text=last['AQI'])
+            metrics_refs["Air Quality Index"]["status"].configure(text=aqi_status)
+            metrics_refs["Air Quality Index"]["badge"].configure(fg_color=status_to_color(aqi_status))
+
+            # Update GSR
+            gsr_status = condition_gsr(last['GSR'])
+            metrics_refs["GSR"]["value"].configure(text=last['GSR'])
+            metrics_refs["GSR"]["status"].configure(text=gsr_status)
+            metrics_refs["GSR"]["badge"].configure(fg_color=status_to_color(gsr_status))
+
+            # Update Temperature
+            temp_status = condition_temp(last['Temperature'])
+            metrics_refs["Temperature"]["value"].configure(text=last['Temperature'])
+            metrics_refs["Temperature"]["status"].configure(text=temp_status)
+            metrics_refs["Temperature"]["badge"].configure(fg_color=status_to_color(temp_status))
+
+        master.after(REFRESH_INTERVAL * 1000, update_live_data)
+
+    # Start live updates
+    update_live_data()
 
 
 def open_dashboard(master):
