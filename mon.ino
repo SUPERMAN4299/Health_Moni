@@ -4,7 +4,6 @@
 #include <ArduinoJson.h>
 #include "FS.h"
 #include "SPIFFS.h"
-#include <WebServer.h>
 
 // --- DHT11 Setup ---
 #define DHT11_PIN 4
@@ -28,22 +27,6 @@ long currentIndex = 0;  // to remember position
 // --- WiFi AP Setup ---
 const char* ap_ssid = "ESP32_Sensors";
 const char* ap_password = "12345678";
-WebServer server(80);
-
-void handleRoot() {
-  server.send(200, "text/html", "<h2>ESP32 Sensor Access Point</h2><p>Go to <a href=\"/data\">/data</a> to see sensor JSON</p>");
-}
-
-void handleData() {
-  File file = SPIFFS.open(filename, FILE_READ);
-  if (!file) {
-    server.send(500, "application/json", "{\"error\":\"Failed to open file\"}");
-    return;
-  }
-  String jsonData = file.readString();
-  file.close();
-  server.send(200, "application/json", jsonData);
-}
 
 void setup() {
   Serial.begin(115200);
@@ -96,12 +79,6 @@ void setup() {
   Serial.print("SSID: "); Serial.println(ap_ssid);
   Serial.print("Password: "); Serial.println(ap_password);
   Serial.print("AP IP Address: "); Serial.println(WiFi.softAPIP());
-
-  // Web server routes
-  server.on("/", handleRoot);
-  server.on("/data", handleData);
-  server.begin();
-  Serial.println("Web Server Started");
 }
 
 void loop() {
@@ -167,9 +144,6 @@ void loop() {
 
   Serial.print("Stored entry at index: ");
   Serial.println(currentIndex);
-
-  // Handle client requests
-  server.handleClient();
 
   delay(2000); // every 2 seconds
 }
