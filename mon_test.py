@@ -1,78 +1,45 @@
-import json
-import time
-import os
+import socket
+import matplotlib.pyplot as plt
 
-# --- File path to the JSON data from ESP32 ---
-filename = "sensor_data.json"
+# ESP32 AP IP + port
+ESP32_IP = "192.168.4.1"
+ESP32_PORT = 3333
 
-# --- Max entries (same as ESP32) ---
-MAX_ENTRIES = 84600
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client.connect((ESP32_IP, ESP32_PORT))
+print("Connected to ESP32")
 
-# --- Refresh interval (seconds) ---
-REFRESH_INTERVAL = 2
+# Data buffers
+temps, voltages, mq7s, irs, reds = [], [], [], [], []
 
-# --- State memory ---
-last_entry = None
-last_count = 0
-device_connected = True
+plt.ion()
+fig, ax = plt.subplots()
 
-
-def read_sensor_data():
-    """Read sensor data from JSON if available, else return None."""
-    if not os.path.exists(filename):
-        return None
-
-    try:
-        with open(filename, "r") as f:
-            data = json.load(f)
-        if not data:
-            return None
-        return data
-    except json.JSONDecodeError:
-        # Happens if ESP32 is still writing to the file
-        return None
-
-
-# --- Main loop ---
 while True:
-    sensor_data = read_sensor_data()
+    data = client.recv(1024).decode().strip()
+    if not data:
+        continue
+    try:
+        values = data.split(",")
+        if len(values) != 11:  # we expect 11 values
+            continue
 
-    if sensor_data:
-        total_entries = len(sensor_data)
-        last = sensor_data[-1]
+        temp, tp, mq7, ir, red, accX, accY, accZ, gX, gY, gZ = map(float, values)
 
-        # Detect new data (file grew)
-        if total_entries > last_count:
-            device_connected = True
-            last_entry = last
-            last_count = total_entries
+        temps.append(temp)
+        voltages.append(tp)
+        mq7s.append(mq7)
+        irs.append(ir)
+        reds.append(red)
 
-            print("------ Latest Sensor Data ------")
-            print(f"Temperature: {last['Temperature']} °C")
-            print(f"Humidity:    {last['Humidity']} %")
-            print(f"HQ07:        {last['HQ07']} V")
-            print(f"GSR:         {last['GSR']} V")
-            print("--------------------------------")
+        # --- Example graph: Temp + MQ7 + Battery ---
+        ax.clear()
+        ax.plot(temps, label="DS18B20 Temp (C)")
+        ax.plot(voltages, label="Battery (V)")
+        ax.plot(mq7s, label="MQ-7 Gas (V)")
+        ax.legend()
+        plt.pause(0.1)
 
-            if total_entries < MAX_ENTRIES:
-                print(f"Appended new entry. Total entries: {total_entries}\n")
-            else:
-                print(f"Overwrote oldest entry. Buffer full ({MAX_ENTRIES} entries)\n")
-
-        else:
-            # No new entries since last check
-            if last_entry:
-                if device_connected:
-                    print("Device not connected. Holding last values:\n")
-                    print("------ Last Known Sensor Data ------")
-                    print(f"Temperature: {last_entry['Temperature']} °C")
-                    print(f"Humidity:    {last_entry['Humidity']} %")
-                    print(f"HQ07:        {last_entry['HQ07']} V")
-                    print(f"GSR:         {last_entry['GSR']} V")
-                    print("--------------------------------\n")
-                device_connected = False
-
-    else:
-        print("No sensor data file found (waiting for ESP32 to update JSON)\n")
-
-    time.sleep(REFRESH_INTERVAL)
+    except Exception as e:
+        print("Parse error:", e)
+        continue
