@@ -10,6 +10,7 @@ import time
 import customtkinter as ctk
 from tkinter import messagebox
 import tkinter as tk
+import shutil
 import multiprocessing
 import numpy as np
 from PyQt5 import QtWidgets
@@ -235,9 +236,6 @@ def logout(master):
 
     show_login_widgets(master)
 
-
-
-
 # ------------ Taking sensor data in .json ------------- #
 
 filename = "sensor_data.json"
@@ -256,28 +254,32 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as ip_local:
     ip_local.connect(("8.8.8.8", 80))
     local_ip = ip_local.getsockname()[0]
 
+device_connected = False  # global state
+
 def connection():
+    global device_connected
     if local_ip == stored_ip_enc:
         device_connected = True
-        return device_connected
     else:
         device_connected = False
-        return device_connected
+    return device_connected
+
         
 
 def read_sensor_data():
     if not os.path.exists(filename):
         return None
-
+    tmp_filename = "sensor_data_tmp.json"
     try:
-        with open(filename, "r") as f:
+        shutil.copyfile(filename, tmp_filename)
+        with open(tmp_filename, "r") as f:
             data = json.load(f)
         if not data:
             return None
         return data
-    except json.JSONDecodeError:
-        # Happens if ESP32 is still writing to the file
+    except (json.JSONDecodeError, IOError):
         return None
+
 # ------------ Artificial Intelegence ------------ #
 
 ##################################################################
@@ -349,11 +351,6 @@ while True:
             TEMP_DATA = last['Temperature']
             break
 
-            if total_entries < MAX_ENTRIES:
-                print(f"Appended new entry. Total entries: {total_entries}\n")
-            else:
-                print(f"Overwrote oldest entry. Buffer full ({MAX_ENTRIES} entries)\n")
-
         else:
             # No new entries since last check
             if last_entry:
@@ -364,13 +361,10 @@ while True:
                     TEMP_DATA = last_entry['Temperature']
                 connection()
     else:
-        pass
         #main_dash(master)
-        #messagebox.showerror("Error","Start Your device")
+        messagebox.showerror("Device Status","Start Your device")
+        time.sleep(5)
         #break
-    time.sleep(REFRESH_INTERVAL)
-
-
         
 # ---------------- Icons ---------------- #
 ICON_HEART = "❤️"
@@ -672,7 +666,7 @@ physician."""
             metrics_refs["Temperature"]["badge"].configure(fg_color=status_to_color(temp_status))
 
         else:
-        # Device not connected 
+        # Device not connected or no data yet
             messagebox.showerror("Device Status", "Device is not connected!")
             time.sleep(10)
         master.after(REFRESH_INTERVAL * 1000, update_live_data)
