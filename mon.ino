@@ -1,107 +1,175 @@
 #include <WiFi.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
-#include "Wire.h"
+#include "DHT.h"
 #include "MAX30105.h"
-#include "MPU6050.h"
+#include <ArduinoJson.h>
+#include "FS.h"
+#include "SPIFFS.h"
+#include <WebServer.h>
 
-// --- WiFi AP ---
-const char* ssid     = "ESP32_AP";
-const char* password = "12345678";
-WiFiServer server(3333);
+// --- DHT11 Setup ---
+#define DHT11_PIN 4
+#define DHT11_TYPE DHT11
+DHT dht11(DHT11_PIN, DHT11_TYPE);
 
-// --- DS18B20 ---
-#define ONE_WIRE_BUS 4
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature ds18b20(&oneWire);
-
-// --- TP4056 Battery Monitor (via ADC pin) ---
-#define TP4056_PIN 34
-
-// --- MQ-7 Gas Sensor ---
-#define MQ7_PIN 35
+// --- Analog Sensors ---
+#define HQ07_AOUT 34
+#define GSR_PIN   35
 
 // --- MAX30102 ---
 MAX30105 particleSensor;
 
-// --- MPU6050 ---
-MPU6050 mpu;
+// --- Constants ---
+const char* filename = "/sensor_data.json";
+const long MAX_ENTRIES = 84600;
+
+// --- Globals ---
+long currentIndex = 0;  // to remember position
+
+// --- WiFi AP Setup ---
+const char* ap_ssid = "ESP32_Sensors";
+const char* ap_password = "12345678";
+WebServer server(80);
+
+void handleRoot() {
+  server.send(200, "text/html", "<h2>ESP32 Sensor Access Point</h2><p>Go to <a href=\"/data\">/data</a> to see sensor JSON</p>");
+}
+
+void handleData() {
+  File file = SPIFFS.open(filename, FILE_READ);
+  if (!file) {
+    server.send(500, "application/json", "{\"error\":\"Failed to open file\"}");
+    return;
+  }
+  String jsonData = file.readString();
+  file.close();
+  server.send(200, "application/json", jsonData);
+}
 
 void setup() {
   Serial.begin(115200);
+  delay(1000);
 
-  // Start WiFi AP
-  WiFi.softAP(ssid, password);
-  Serial.print("ESP32 AP IP: ");
-  Serial.println(WiFi.softAPIP());
-  server.begin();
+  // SPIFFS Setup
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS Mount Failed");
+    return;
+  }
 
-  // Init DS18B20
-  ds18b20.begin();
+  // DHT11
+  dht11.begin();
 
-  // Init MAX30102
+  // MAX30102
   if (!particleSensor.begin(Wire, I2C_SPEED_STANDARD)) {
     Serial.println("MAX30102 not found!");
   } else {
     particleSensor.setup();
   }
 
-  // Init MPU6050
-  Wire.begin();
-  if (!mpu.begin()) {
-    Serial.println("MPU6050 not found!");
+  // Initialize file if doesn't exist
+  if (!SPIFFS.exists(filename)) {
+    File file = SPIFFS.open(filename, FILE_WRITE);
+    if (file) {
+      file.print("[]"); // empty JSON array
+      file.close();
+      currentIndex = 0;
+    }
   } else {
-    Serial.println("MPU6050 ready");
+    // If file exists, find how many entries already stored
+    File file = SPIFFS.open(filename, FILE_READ);
+    if (file) {
+      StaticJsonDocument<10240> doc;
+      DeserializationError error = deserializeJson(doc, file);
+      file.close();
+
+      if (!error) {
+        JsonArray arr = doc.as<JsonArray>();
+        currentIndex = arr.size();  // resume from here
+        Serial.print("Resuming at index: ");
+        Serial.println(currentIndex);
+      }
+    }
   }
+
+  // Start WiFi Access Point
+  WiFi.softAP(ap_ssid, ap_password);
+  Serial.println("Access Point Started");
+  Serial.print("SSID: "); Serial.println(ap_ssid);
+  Serial.print("Password: "); Serial.println(ap_password);
+  Serial.print("AP IP Address: "); Serial.println(WiFi.softAPIP());
+
+  // Web server routes
+  server.on("/", handleRoot);
+  server.on("/data", handleData);
+  server.begin();
+  Serial.println("Web Server Started");
 }
 
 void loop() {
-  WiFiClient client = server.available();
-  if (client) {
-    Serial.println("Client connected");
+  // --- Read Sensors ---
+  float tempDHT11 = dht11.readTemperature();
+  float humDHT11  = dht11.readHumidity();
 
-    while (client.connected()) {
-      // --- DS18B20 ---
-      ds18b20.requestTemperatures();
-      float tempDS18B20 = ds18b20.getTempCByIndex(0);
+  int rawHQ07 = analogRead(HQ07_AOUT);
+  float voltageHQ07 = (rawHQ07 / 4095.0) * 3.3;
 
-      // --- TP4056 Battery Voltage ---
-      int rawTP = analogRead(TP4056_PIN);
-      float voltageTP = (rawTP / 4095.0) * 3.3 * 2; // adjust if voltage divider used
+  int rawGSR = analogRead(GSR_PIN);
+  float voltageGSR = (rawGSR / 4095.0) * 3.3;
 
-      // --- MQ-7 Gas Sensor ---
-      int rawMQ7 = analogRead(MQ7_PIN);
-      float voltageMQ7 = (rawMQ7 / 4095.0) * 3.3;
+  long irValue = particleSensor.getIR();
+  long redValue = particleSensor.getRed();
 
-      // --- MAX30102 ---
-      long irValue = particleSensor.getIR();
-      long redValue = particleSensor.getRed();
+  // --- Load existing JSON file ---
+  File file = SPIFFS.open(filename, FILE_READ);
+  StaticJsonDocument<10240> doc;
+  JsonArray arr;
 
-      // --- MPU6050 ---
-      mpu.update();
-      float accX = mpu.getAccX();
-      float accY = mpu.getAccY();
-      float accZ = mpu.getAccZ();
-      float gyroX = mpu.getGyroX();
-      float gyroY = mpu.getGyroY();
-      float gyroZ = mpu.getGyroZ();
-
-      // --- Send as CSV ---
-      client.print(tempDS18B20); client.print(",");
-      client.print(voltageTP);   client.print(",");
-      client.print(voltageMQ7);  client.print(",");
-      client.print(irValue);     client.print(",");
-      client.print(redValue);    client.print(",");
-      client.print(accX);        client.print(",");
-      client.print(accY);        client.print(",");
-      client.print(accZ);        client.print(",");
-      client.print(gyroX);       client.print(",");
-      client.print(gyroY);       client.print(",");
-      client.println(gyroZ);
-
-      delay(2000); // every 2 sec
+  if (file) {
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+    if (error) {
+      arr = doc.to<JsonArray>();
+    } else {
+      arr = doc.as<JsonArray>();
     }
-    client.stop();
-    Serial.println("Client disconnected");
+  } else {
+    arr = doc.to<JsonArray>();
   }
+
+  // --- Create new entry ---
+  StaticJsonDocument<256> entry;
+  entry["Temperature"]   = isnan(tempDHT11) ? 0 : tempDHT11;
+  entry["Humidity"]      = isnan(humDHT11) ? 0 : humDHT11;
+  entry["HQ07"]          = voltageHQ07;
+  entry["GSR"]           = voltageGSR;
+  entry["Heartbeat_IR"]  = irValue;
+  entry["Heartbeat_Red"] = redValue;
+
+  // --- Add entry (circular buffer logic) ---
+  if (arr.size() < MAX_ENTRIES) {
+    arr.add(entry);  // append if not full
+    currentIndex++;
+  } else {
+    // overwrite oldest entry
+    for (size_t i = 0; i < arr.size() - 1; i++) {
+      arr[i] = arr[i + 1];
+    }
+    arr[MAX_ENTRIES - 1] = entry;
+  }
+
+  // --- Write updated array back to file ---
+  file = SPIFFS.open(filename, FILE_WRITE);
+  if (file) {
+    serializeJson(arr, file);
+    file.close();
+  } else {
+    Serial.println("Failed to open file for writing");
+  }
+
+  Serial.print("Stored entry at index: ");
+  Serial.println(currentIndex);
+
+  // Handle client requests
+  server.handleClient();
+
+  delay(2000); // every 2 seconds
 }
