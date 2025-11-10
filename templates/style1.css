@@ -1,0 +1,68 @@
+body {
+  font-family: "Space Grotesk", sans-serif;
+}
+
+/* Glass effect */
+.glassmorphism {
+  background: rgba(13, 166, 242, 0.1);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(13, 166, 242, 0.2);
+  box-shadow: 0 0 20px rgba(13, 166, 242, 0.2);
+}
+
+/* Neon glow button */
+.glow {
+  box-shadow: 0 0 10px #0da6f2, 0 0 20px #0da6f2, 0 0 30px #0da6f2;
+  transition: all 0.3s ease;
+}
+
+.glow:hover {
+  box-shadow: 0 0 20px #0da6f2, 0 0 40px #0da6f2;
+}
+
+/* Input field styling */
+.form-input,
+.form-select,
+.form-textarea {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(13, 166, 242, 0.3) !important;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  outline: none !important;
+  border-color: #0da6f2 !important;
+  box-shadow: 0 0 10px #0da6f2 !important;
+}
+
+/* Step icons */
+.step-icon {
+  position: absolute;
+  left: 0;
+  top: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 3rem;
+  width: 3rem;
+  background-color: #101c22;
+  border: 2px solid rgba(13, 166, 242, 0.5);
+  border-radius: 9999px;
+  transition: all 0.3s ease;
+}
+
+.group:hover .step-icon {
+  border-color: #0da6f2;
+  transform: scale(1.1);
+}
+
+/* Smooth transitions */
+button,
+a,
+input,
+select,
+textarea {
+  transition: all 0.3s ease;
+}

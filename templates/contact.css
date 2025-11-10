@@ -1,0 +1,93 @@
+body {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+/* Navigation Links */
+.nav-link {
+  color: rgba(255, 255, 255, 0.8);
+  transition: all 0.3s ease;
+}
+.nav-link:hover {
+  color: #ffffff;
+  text-shadow: 0 0 5px #06d0f9;
+}
+.nav-link-active {
+  color: #06d0f9;
+  font-weight: 700;
+  text-shadow: 0 0 5px #06d0f9;
+}
+
+/* Input Fields */
+.input-field {
+  width: 100%;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(0, 0, 0, 0.2);
+  color: white;
+  border-radius: 0.5rem;
+  padding: 0.9rem;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+.input-field::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+.input-field:focus {
+  border-color: #06d0f9;
+  box-shadow: 0 0 10px rgba(6, 208, 249, 0.5);
+  outline: none;
+}
+
+/* Submit Button */
+.submit-btn {
+  width: 100%;
+  background-color: #06d0f9;
+  color: #0f1f23;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-radius: 0.5rem;
+  padding: 0.9rem;
+  transition: all 0.3s ease;
+}
+.submit-btn:hover {
+  background-color: rgba(6, 208, 249, 0.9);
+}
+
+/* Glow Effects */
+.glow {
+  box-shadow: 0 0 5px #06d0f9, 0 0 10px #06d0f9, 0 0 15px #06d0f9;
+}
+.icon-glow {
+  filter: drop-shadow(0 0 3px #06d0f9) drop-shadow(0 0 6px #06d0f9);
+}
+
+/* Contact Info */
+.contact-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
+}
+.contact-icon {
+  flex-shrink: 0;
+  background-color: rgba(6, 208, 249, 0.1);
+  border: 1px solid rgba(6, 208, 249, 0.3);
+  padding: 0.75rem;
+  border-radius: 9999px;
+}
+.contact-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: white;
+}
+.contact-detail {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Smooth Transitions */
+button,
+a,
+input,
+textarea {
+  transition: all 0.3s ease;
+}

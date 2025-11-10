@@ -1,0 +1,43 @@
+@keyframes neon-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 5px #0da6f2,
+      0 0 10px #0da6f2,
+      0 0 20px #0da6f2,
+      0 0 40px #0da6f2;
+  }
+  50% {
+    box-shadow:
+      0 0 10px #0da6f2,
+      0 0 20px #0da6f2,
+      0 0 40px #0da6f2,
+      0 0 80px #0da6f2;
+  }
+}
+
+.neon-border {
+  border: 2px solid #0da6f2;
+  animation: neon-glow 1.5s infinite alternate;
+}
+
+.feature-card {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(13, 166, 242, 0.2);
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.feature-card:hover {
+  border-color: #0da6f2;
+  transform: translateY(-4px);
+}
+
+.feature-image {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.5rem;
+  background-size: cover;
+  background-position: center;
+  margin-bottom: 1rem;
+}
