@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Health_Moni</title>
+  <link href="data:image/x-icon;base64," rel="icon" type="image/x-icon" />
+  <link href="https://fonts.googleapis.com" rel="preconnect" />
+  <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            primary: "#0da6f2",
+            "background-light": "#f5f7f8",
+            "background-dark": "#101c22",
+          },
+          fontFamily: {
+            display: ["Space Grotesk"],
+          },
+          borderRadius: {
+            DEFAULT: "0.25rem",
+            lg: "0.5rem",
+            xl: "0.75rem",
+            full: "9999px"
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    @keyframes neon-glow {
+      0%,
+      100% {
+        box-shadow: 0 0 5px theme('colors.primary'), 0 0 10px theme('colors.primary'), 0 0 20px theme('colors.primary'), 0 0 40px theme('colors.primary');
+      }
+      50% {
+        box-shadow: 0 0 10px theme('colors.primary'), 0 0 20px theme('colors.primary'), 0 0 40px theme('colors.primary'), 0 0 80px theme('colors.primary');
+      }
+    }
+    .neon-border {
+      border: 2px solid theme('colors.primary');
+      animation: neon-glow 1.5s infinite alternate;
+    }
+  </style>
+</head>
+
+<body class="bg-background-light dark:bg-background-dark font-display text-white">
+  <div class="relative w-full min-h-screen overflow-x-hidden">
+    <div class="absolute inset-0 bg-black/50 z-0"></div>
+
+    <div class="relative z-10 flex flex-col items-center justify-center min-h-screen p-4 md:p-8">
+      <main class="w-full max-w-5xl mx-auto">
+
+        <!-- HERO SECTION -->
+        <section class="relative text-center py-20 md:py-32 bg-cover bg-center rounded-xl overflow-hidden neon-border" 
+          style='background-image: linear-gradient(rgba(16, 28, 34, 0.7) 0%, rgba(16, 28, 34, 0.9) 100%), url("https://lh3.googleusercontent.com/aida-public/AB6AXuCyvuYHaaT0L2mwwQZqEuhEoaqEEzrzPFF3YRhaORmKk9U6_oyMYAPNQ2ZERgRjacKTfKX5anHraUJdYrHzBrp88LOESOhV6gsiFQf_fCjvR3x_Ivzl1qRo5nCzmxeXosGCnwis5sfZsJeotsGVqNJ7MtFZRIrpZXGwS1IAsBCbJF8oOZOhfUPcpfVdaJe4AmRj6gzLsOhL2r8ECjq3v8rc5rfJhyvjaPSa34cDlEVoBTCafJ3_pmylxitLjI7QOKcbQRkZ07Ln-C4");'>
+          <div class="relative z-10 px-4">
+            <h1 class="text-4xl md:text-6xl font-bold mb-4 text-shadow-lg">Next-Gen Health Monitoring System</h1>
+            <p class="text-lg md:text-xl max-w-3xl mx-auto mb-8 text-white/80">
+              Revolutionizing personal health with advanced technology and real-time insights.
+            </p>
+            <button class="bg-primary text-white font-bold py-3 px-8 rounded-lg hover:bg-primary/80 transition-all duration-300 shadow-[0_0_15px_theme('colors.primary')] hover:shadow-[0_0_25px_theme('colors.primary')]">
+              Download Now
+            </button>
+          </div>
+        </section>
+
+        <!-- ABOUT SECTION -->
+        <section class="py-16 px-4 md:px-8">
+          <h2 class="text-3xl font-bold text-center mb-4">About the Project</h2>
+          <p class="text-lg text-center max-w-4xl mx-auto text-white/80">
+            This project aims to create a cutting-edge health monitoring system that provides users with real-time health data and personalized insights. The system integrates advanced sensors, AI-driven analytics, and a user-friendly interface to empower individuals to take control of their health and well-being.
+          </p>
+        </section>
+
+        <!-- FEATURES SECTION -->
+        <section class="py-16 px-4 md:px-8 bg-background-dark/50 rounded-xl">
+          <h2 class="text-3xl font-bold text-center mb-12">Key Features</h2>
+          <div class="grid md:grid-cols-3 gap-8">
+
+            <div class="bg-background-light/10 dark:bg-background-dark/20 p-6 rounded-lg border border-primary/20 hover:border-primary transition-all duration-300 group">
+              <div class="w-full aspect-video rounded-lg mb-4 bg-cover bg-center"
+                style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuAjGArI2HgRGo5KoH0oLkwwurg-orJIFmqk0MFogr_gLgx_HnSV4L0-ogeQ_HDPIv1q1WxhV658BwDe6id75DhyBZdhdkeLZ0qbJ7__SAiYQhRNxE7NFJj6vTm1Ki4ZK_TLQhNFXTux05k4jTD11dBOKK5iwqatefXAzqbyHbr8Bax5qytwc2hljV_fcwStrOQupVqXKIy3XnXaE4h8zJisl1QSch9DLAqaix_bJSsj3rY2WkCqFrIkLE_g44L9mYm9fRe2X8r63UM");'></div>
+              <h3 class="text-xl font-bold mb-2">Heart Rate Monitoring</h3>
+              <p class="text-white/70">Track your heart rate in real-time and identify potential anomalies.</p>
+            </div>
+
+            <div class="bg-background-light/10 dark:bg-background-dark/20 p-6 rounded-lg border border-primary/20 hover:border-primary transition-all duration-300 group">
+              <div class="w-full aspect-video rounded-lg mb-4 bg-cover bg-center"
+                style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBuqXGVmTttJ_ynnKUGi7jL6N-p-dklf2nQgYxt3z5DPO0YolPuGcxPiOzgT6r8kd2k2V1HD37LM9--7_2Xi3MX92O4bnQZgWgOUJ7jNA6ngSG5mBwJ-u3Fg6w-QlCu8e2wViJczVDUmZlQ2B84WE6A9UZ_XE4tPKfcNf8xLMi1wQewqkPT7V8ChQ3DaLIofgbv6N8Wcch4Y5QMbfOTUyf399JaR_s2kz0NK_oysio7jwBj7TMkinV2OcCDN2jkaCu5xgQOyq4xR_M");'></div>
+              <h3 class="text-xl font-bold mb-2">Live Prescription from AI</h3>
+              <p class="text-white/70">Receive AI-generated health advice and prescriptions based on your live data.</p>
+            </div>
+
+            <div class="bg-background-light/10 dark:bg-background-dark/20 p-6 rounded-lg border border-primary/20 hover:border-primary transition-all duration-300 group">
+              <div class="w-full aspect-video rounded-lg mb-4 bg-cover bg-center"
+                style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCg_eOOfYpi4d5nLsR30x2kP1wg6PoDVa7wBdSi8h0XkDvylLTEOOVWZzExUo3wS3MAJ214eGvmcmbjNWRIhrPmTVXAjrllBaKjHpsn4sSlo4JtoT4VfgZoexgha5sS8DbWVLIu-GLNmmCKa0bK1iTjNRemSxIMnVXOOJMVzKAqWRRKPRaj0UG6o6oqsNqWohhhtHVT-uuwQsw2Sr81sBPtU9jhyRHO6alyg8NT1SlKkk21nsm0yp_88TwfJiB_t95fJwMtY_ZhWwM");'></div>
+              <h3 class="text-xl font-bold mb-2">Live GSR value for tracking mood</h3>
+              <p class="text-white/70">Monitor stress, anxiety, and depression levels through Galvanic Skin Response.</p>
+            </div>
+
+            <div class="bg-background-light/10 dark:bg-background-dark/20 p-6 rounded-lg border border-primary/20 hover:border-primary transition-all duration-300 group">
+              <div class="w-full aspect-video rounded-lg mb-4 bg-cover bg-center"
+                style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDNVrjsgyH56M1c-6y4_Kq1wTkxVDW4Q5Lg9RM-61b-FFrmCHYSmqQpgluoEbMxEh3JGP8WGSpCh4Wg5NPvjIVivAUACPnqrNljLNNC7vJOkn5N8zoO7oWbywLF-Dg-hQmNDX9llgGmi4LHxjfd1uiqWKgDfzYRRW0055YUvF4T8Ttx-myn7xBMf31gFAlnpMO8v3Uw2gRZBviHmTAoz2asa2NfJtwwasJOHqOpdhMO4NXzXxttPfD4sEtQGLuCBekroUdY0cjYhS4");'></div>
+              <h3 class="text-xl font-bold mb-2">Live Temperature Data</h3>
+              <p class="text-white/70">Get real-time body temperature readings for instant health checks.</p>
+            </div>
+
+            <div class="bg-background-light/10 dark:bg-background-dark/20 p-6 rounded-lg border border-primary/20 hover:border-primary transition-all duration-300 group">
+              <div class="w-full aspect-video rounded-lg mb-4 bg-cover bg-center"
+                style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDNVrjsgyH56M1c-6y4_Kq1wTkxVDW4Q5Lg9RM-61b-FFrmCHYSmqQpgluoEbMxEh3JGP8WGSpCh4Wg5NPvjIVivAUACPnqrNljLNNC7vJOkn5N8zoO7oWbywLF-Dg-hQmNDX9llgGmi4LHxjfd1uiqWKgDfzYRRW0055YUvF4T8Ttx-myn7xBMf31gFAlnpMO8v3Uw2gRZBviHmTAoz2asa2NfJtwwasJOHqOpdhMO4NXzXxttPfD4sEtQGLuCBekroUdY0cjYhS4");'></div>
+              <h3 class="text-xl font-bold mb-2">High Security of Data</h3>
+              <p class="text-white/70">Your health data is protected with end-to-end encryption and advanced security protocols.</p>
+            </div>
+
+            <div class="bg-background-light/10 dark:bg-background-dark/20 p-6 rounded-lg border border-primary/20 hover:border-primary transition-all duration-300 group">
+              <div class="w-full aspect-video rounded-lg mb-4 bg-cover bg-center"
+                style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDNVrjsgyH56M1c-6y4_Kq1wTkxVDW4Q5Lg9RM-61b-FFrmCHYSmqQpgluoEbMxEh3JGP8WGSpCh4Wg5NPvjIVivAUACPnqrNljLNNC7vJOkn5N8zoO7oWbywLF-Dg-hQmNDX9llgGmi4LHxjfd1uiqWKgDfzYRRW0055YUvF4T8Ttx-myn7xBMf31gFAlnpMO8v3Uw2gRZBviHmTAoz2asa2NfJtwwasJOHqOpdhMO4NXzXxttPfD4sEtQGLuCBekroUdY0cjYhS4");'></div>
+              <h3 class="text-xl font-bold mb-2">Live Environment Analysis</h3>
+              <p class="text-white/70">Monitor air quality, humidity, and other environmental factors affecting your health.</p>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- CLEAN FOOTER -->
+        <footer class="text-center py-8 border-t border-primary/20 mt-16">
+          <div class="flex justify-center gap-6 mb-6">
+            <a class="text-white/70 hover:text-primary transition-colors" href="#">Privacy Policy</a>
+            <a class="text-white/70 hover:text-primary transition-colors" href="index1.html">Quary & Issues</a>
+            <a class="text-white/70 hover:text-primary transition-colors" href="contact.html">Contact Us</a>
+          </div>
+
+          <p class="text-white/60 text-sm">
+            ©2024 HealthTech Innovations. All rights reserved.
+          </p>
+        </footer>
+
+      </main>
+    </div>
+  </div>
+</body>
+</html>
