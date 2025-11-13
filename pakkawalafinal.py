@@ -458,10 +458,6 @@ def validate_and_submit(master):
         else:
             data[name] = getattr(widget, "get", lambda: "")().strip()
 
-    if "Previous Disease" in data and len(data["Previous Disease"]) > 100:
-        messagebox.showerror("Input Error", "Disease info max 100 chars.")
-        return
-
     if "Age" in data:
         try:
             age = int(data["Age"])
@@ -674,14 +670,13 @@ file_lock = threading.Lock()
 prescription_lock = threading.Lock()
 sensor_lock = threading.Lock()
 
-
 # --- Global Variables ---
 out = "AI not ready..."
 
-model = joblib.load("health_ai_final_ultra_best_ensemble.pkl")
-label_disease = joblib.load("label_disease.pkl")
-label_past = joblib.load("label_past.pkl")
-scaler = joblib.load("scaler_poly_final.pkl")
+model = joblib.load("F:\Health_moni\datasets\health_ai_final_ultra_best_ensemble.pkl")
+label_disease = joblib.load("F:\Health_moni\datasets\label_disease.pkl")
+label_past = joblib.load("F:\Health_moni\datasets\label_past.pkl")
+scaler = joblib.load("F:\Health_moni\datasets\scaler_poly_final.pkl")
 
 poly = PolynomialFeatures(degree=2, include_bias=False)
 
@@ -690,7 +685,6 @@ base_features = [
     "HR_Temp_Ratio", "Oxygen_Stress_Index", "Temp_Spo2_Interaction",
     "HRV_Index", "Thermal_Stress_Index", "Stress_Ratio"
 ]
-
 
 PATIENT_FILE = "./patient_data1.json"  # example path
 
@@ -760,7 +754,7 @@ def ai_loop():
                 f"Patient details: {patient_info}.\n"
                 "Provide a short, medically sound analysis and advice."
             )
-
+        
             # --- AI Generation ---
             def predicted_disease():
                 try:
@@ -824,7 +818,7 @@ def ai_loop():
                 out = f"AI loop error: {e}"
 
         # --- Wait before next cycle ---
-        time.sleep(180)  # Repeat every 3 minutes
+        time.sleep(120)  # Repeat every 3 minutes
 
 def logout(master):
     clear_session()
@@ -1027,14 +1021,27 @@ def open_dashboard(master):
 
     # Clear `fields` then populate4
     fields.clear()
+
     for i, (name, icon) in enumerate(field_names):
         label = ctk.CTkLabel(main_frame, text=f"{icon} {name}:", anchor="w",
                              text_color="white", font=("Segoe UI", 11, "bold"))
         label.grid(row=i + 1, column=0, padx=10, pady=10, sticky="w")
 
         if name == "Previous Disease":
-            entry = ctk.CTkTextbox(main_frame, width=300, height=80,
-                                   corner_radius=10, border_width=1, border_color="cyan")
+            entry1 = ctk.CTkTextbox(main_frame,
+                                   values1 = [
+                                            "Anemia",
+                                            "Asthma",
+                                            "Heart Disease",
+                                            "Hypertension"
+                                      ],
+                                      fg_color="#222",
+                                      button_color="#444",
+                                      text_color="white",
+                                      dropdown_hover_color="#0094ff",
+                                      width=300,
+                                      corner_radius=10)
+            entry1.set("Past Disease")
         elif name == "Safe Environment for Patient":
             entry = ctk.CTkOptionMenu(main_frame,
                                       values=[
@@ -1056,7 +1063,9 @@ def open_dashboard(master):
                                  border_width=1, border_color="cyan")
 
         entry.grid(row=i + 1, column=1, padx=10, pady=10, sticky="ew")
+        entry1.grid(row=i + 1, column=1, padx=10, pady=10, sticky="ew")
         fields[name] = entry
+        fields[name] = entry1
 
     button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
     button_frame.grid(row=len(field_names) + 1, column=0, columnspan=2, pady=20)
