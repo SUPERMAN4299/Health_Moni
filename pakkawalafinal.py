@@ -673,10 +673,10 @@ sensor_lock = threading.Lock()
 # --- Global Variables ---
 out = "AI not ready..."
 
-model = joblib.load("F:\Health_moni\datasets\health_ai_final_ultra_best_ensemble.pkl")
-label_disease = joblib.load("F:\Health_moni\datasets\label_disease.pkl")
-label_past = joblib.load("F:\Health_moni\datasets\label_past.pkl")
-scaler = joblib.load("F:\Health_moni\datasets\scaler_poly_final.pkl")
+model = joblib.load(r"F:\Health_moni\datasets\health_ai_final_ultra_best_ensemble.pkl")
+label_disease = joblib.load(r"F:\Health_moni\datasets\label_disease.pkl")
+label_past = joblib.load(r"F:\Health_moni\datasets\label_past.pkl")
+scaler = joblib.load(r"F:\Health_moni\datasets\scaler_poly_final.pkl")
 
 poly = PolynomialFeatures(degree=2, include_bias=False)
 
@@ -787,7 +787,7 @@ def ai_loop():
                 disease = label_disease.inverse_transform([pred])[0]
                 return disease
             
-            data = pd.read_csv("dataset\logical_health_dataset.csv")
+            data = pd.read_csv(r"F:\Health_moni\datasets\logical_health_dataset.csv")
 
             if "PredictDisease" in data.columns and "ShortAdvice" in data.columns:
                 advice_dict = data.groupby("PredictedDisease")["ShortAdvice"].first().to_dict()
