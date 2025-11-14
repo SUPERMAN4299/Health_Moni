@@ -10,6 +10,7 @@ from pyqtgraph.Qt import QtWidgets, QtCore
 import requests
 import string
 import multiprocessing
+import pyautogui
 from threading import Lock
 if sys.platform.startswith("win"):
     multiprocessing.set_start_method("spawn", force=True)
@@ -146,21 +147,31 @@ def clear_patient_form():
 # ---------------- Configurations ---------------- #
 SESSION_FILE = "session.txt"
 PATIENT_FILE = "patient_data1.json"
-serial_portVER_URL = "http://127.0.0.1:5000"
+serial_portVER_URL = "http://127.0.0.1:5000/patient-data1"
 
 
 # ---------------- Load Credentials ---------------- #
-#stored_userial_port_enc = stored_pass_enc = stored_mac_enc = ""
+DEFAULT_USERNAME = "admin"
+DEFAULT_PASSWORD = "admin"
+stored_userial_port_enc = DEFAULT_USERNAME
+stored_pass_enc = DEFAULT_PASSWORD
+stored_mac_enc = ""
 def load_serial_portver_credentials():
     global stored_userial_port_enc, stored_pass_enc, stored_mac_enc
-    stored_userial_port_enc = stored_pass_enc = stored_mac_enc = ""
+    stored_userial_port_enc = DEFAULT_USERNAME
+    stored_pass_enc = DEFAULT_PASSWORD
+    stored_mac_enc = ""
     try:
         res = requests.get("http://127.0.0.1:5000/s1", timeout=5)
         s = res.text.strip()
         sec = s[0:10] if len(s) >= 10 else ""
         sec1 = s[10:20] if len(s) >= 20 else ""
-        stored_userial_port_enc = hex_decode(sec)
-        stored_pass_enc = hex_decode(sec1)
+        fetched_user = hex_decode(sec)
+        fetched_pass = hex_decode(sec1)
+        if fetched_user:
+            stored_userial_port_enc = fetched_user
+        if fetched_pass:
+            stored_pass_enc = fetched_pass
         stored_mac_enc = "80:f3:da:5d:5d:fa"
     except Exception as e:
         print("[Init] Error loading credentials:", e)
@@ -487,16 +498,25 @@ def validate_and_submit(master):
 def fetch_patient_data():
     try:
         if os.path.exists(PATIENT_FILE):
-            with open(PATIENT_FILE, "r") as f:
-                data = json.load(f)
+            with open(PATIENT_FILE, "r", encoding="utf-8") as f:
+                raw = f.read().strip()
+                if raw:
+                    try:
+                        data = json.loads(raw)
+                        if data:
+                            return data
+                    except json.JSONDecodeError as decode_err:
+                        logger.warning("Corrupt local patient file, ignoring: %s", decode_err)
+                else:
+                    logger.info("Local patient file empty, skipping.")
+        res = requests.get(serial_portVER_URL, timeout=5)
+        if res.status_code == 200:
+            try:
+                data = res.json()
                 if data:
                     return data
-        url = serial_portVER_URL.replace("/patient-data1", "/get-patient-data1")
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            if data:
-                return data
+            except ValueError as decode_err:
+                logger.warning("Remote patient JSON invalid: %s", decode_err)
         return None
     except Exception as e:
         print("Error fetching patient data:", e)
@@ -622,8 +642,22 @@ def status_to_color(status):
     else:
         return CRITICAL_COLOR
 # ---------------- Graph Window (pyqtgraph) ---------------- #
-def run_graph():
-    subprocess.run([sys.executable, "heartbsgload.py"])
+def launch_graph():
+    """Launch the graph window in a separate process to avoid GUI toolkit conflicts"""
+    try:
+        # Use subprocess.Popen to launch graph window without blocking
+        # This works better on Windows than nested multiprocessing
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "heartbsgload.py")
+        if os.path.exists(script_path):
+            subprocess.Popen(
+                [sys.executable, script_path],
+                creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
+            )
+        else:
+            messagebox.showerror("Error", f"Graph script not found: {script_path}")
+    except Exception as e:
+        logger.error(f"Failed to launch graph: {e}")
+        messagebox.showerror("Error", f"Failed to launch graph window:\n{e}")
 
 def read_sensor_data_dummy():
     global HEART_DATA, AIR_QUA_DATA, GSR_DATA, TEMP_DATA, SPO2
@@ -635,12 +669,6 @@ def read_sensor_data_dummy():
         SPO2 = np.random.randint(90, 100)
     return {"HEART_DATA": HEART_DATA, "AIR_QUA_DATA": AIR_QUA_DATA,
             "GSR_DATA": GSR_DATA, "TEMP_DATA": TEMP_DATA, "SPO2": SPO2}
-
-
-def launch_graph():
-    # spawn a separate process to run the graph to avoid GUI toolkit conflicts
-    p = multiprocessing.Process(target=run_graph, daemon=True)
-    p.start()
 
 sensor_poll_stop = threading.Event()
 
@@ -658,6 +686,25 @@ def sensor_poller():
                 SPO2 = data.get('SPO2', SPO2)
         time.sleep(REFRESH_INTERVAL)
 
+
+def get_clean_sensor_values():
+    """Safely converts live sensor data into pure numeric values."""
+    with sensor_lock:
+        try: hr = int(HEART_DATA)
+        except: hr = 0
+
+        try: gsr = float(GSR_DATA)
+        except: gsr = 0.0
+
+        try: temperature = float(TEMP_DATA)
+        except: temperature = 0.0
+
+        try: spo2 = int(SPO2)
+        except: spo2 = 0
+
+    return hr, gsr, temperature, spo2
+
+
 # start sensor poller right away in background
 threading.Thread(target=sensor_poller, daemon=True).start()
 
@@ -673,12 +720,15 @@ sensor_lock = threading.Lock()
 # --- Global Variables ---
 out = "AI not ready..."
 
-model = joblib.load(r"F:\Health_moni\datasets\health_ai_final_ultra_best_ensemble.pkl")
-label_disease = joblib.load(r"F:\Health_moni\datasets\label_disease.pkl")
-label_past = joblib.load(r"F:\Health_moni\datasets\label_past.pkl")
-scaler = joblib.load(r"F:\Health_moni\datasets\scaler_poly_final.pkl")
+model = joblib.load(r"F:\Health_moni\health_ai_final_ultra_best_ensemble.pkl")
+label_disease = joblib.load(r"F:\Health_moni\label_disease.pkl")
+label_past = joblib.load(r"F:\Health_moni\label_past.pkl")
+scaler = joblib.load(r"F:\Health_moni\scaler_poly_final.pkl")
 
+# Fit PolynomialFeatures using dummy feature row (11 base features)
 poly = PolynomialFeatures(degree=2, include_bias=False)
+poly.fit(np.zeros((1, 11)))   # 11 = number of base features
+
 
 base_features = [
     "HeartRate", "GSR", "Temperature", "SpO2", "Age",
@@ -688,137 +738,121 @@ base_features = [
 
 PATIENT_FILE = "./patient_data1.json"  # example path
 
+def get_clean_patient_data(p):
+    """Returns clean numeric patient values (age + encoded disease)."""
+
+    # Age
+    try:
+        age = int(p.get("Age", 0))
+    except:
+        age = 0
+
+    # Previous Disease encoding
+    try:
+        past_encoded = int(label_past.transform([p.get('Previous Disease', 'Other')])[0])
+    except:
+        past_encoded = 0
+
+    return age, past_encoded
+
+
 # --- Locks and dummy sensor variables (replace with your real ones) ---
 prescription_lock = Lock()
 sensor_lock = Lock()
 
+
+def compute_features(hr, gsr, temperature, spo2, age, past_encoded):
+    """Builds the complete feature vector for ML model."""
+
+    # Hand-crafted features
+    hr_temp_ratio = hr / (temperature + 1e-5)
+    oxygen_stress_index = (100 - spo2) + (gsr / 1000)
+    temp_spo2_interaction = temperature * (100 - spo2)
+    hrv_index = 0.0  # HRV cannot be computed with single reading
+    thermal_stress_index = (temperature - 36.5) * (gsr / 800)
+    stress_ratio = (hr / 100) + (gsr / 800) - (spo2 / 95)
+
+    base_vector = np.array([[
+        hr, gsr, temperature, spo2, age,
+        hr_temp_ratio, oxygen_stress_index,
+        temp_spo2_interaction, hrv_index,
+        thermal_stress_index, stress_ratio
+    ]], dtype=float)
+
+    poly_features = poly.transform(base_vector)
+
+    final_vec = np.concatenate([poly_features, np.array([[past_encoded]])], axis=1)
+
+    final_scaled = scaler.transform(final_vec)
+
+    return final_scaled
+
+
+def predict_disease_ml(hr, gsr, temperature, spo2, age, past_encoded):
+    X_scaled = compute_features(hr, gsr, temperature, spo2, age, past_encoded)
+    pred = model.predict(X_scaled)[0]
+    disease = label_disease.inverse_transform([pred])[0]
+    return disease
+
+def get_disease_advice(disease):
+    try:
+        data = pd.read_csv(r"F:\Health_moni\logical_health_dataset.csv")
+        if "PredictedDisease" in data.columns and "ShortAdvice" in data.columns:
+            advice_map = data.groupby("PredictedDisease")["ShortAdvice"].first().to_dict()
+            return advice_map.get(disease, "No advice available.")
+    except:
+        return "No advice available."
+
+    return "No advice available."
+
+
 def ai_loop():
-    """Background AI loop — thread-safe health insight generator."""
-    global out, health_pipe, model, tokenizer
-    
+    """Background AI loop — generates ML predictions + advice every cycle."""
+    global out, model
+
     print("[AI] Background AI loop started.")
 
     while True:
         try:
-            # --- Lazy Model Load ---
-            try:
-                pass
-            except Exception as e:
-                with prescription_lock:
-                    out = f"⚠️ AI model load failed: {str(e)}"
-                print("[AI] Load error:", e)
-                time.sleep(30)
-                continue  # Retry after delay
-
-            # --- Sensor Data ---
-            with sensor_lock:
-                vitals_str = (
-                    f"Heart Rate: {HEART_DATA} BPM, "
-                    f"GSR: {GSR_DATA} µS, "
-                    f"Temperature: {TEMP_DATA}°C, "
-                    f"SPO2: {SPO2}%"
-                )
-                converted_values = [int(num) for num in re.findall(r'\d+', vitals_str)]
-
-            vitals = (
-                f"Heart Rate: {converted_values[0]} BPM, "
-                f"GSR: {converted_values[1]} µS, "
-                f"Temperature: {converted_values[2]}°C, "
-                f"SPO2: {converted_values[3]}%"
-            )
-            
-            heart_rate = converted_values[0]
-            gsr = converted_values[0]
-            temperature = converted_values[0]
-            spo2 = converted_values[0]
-
-            # --- Patient Info ---
-            patient_info = ""
+      
+            p = {}
             if os.path.exists(PATIENT_FILE):
                 try:
                     with open(PATIENT_FILE, "r") as f:
                         pdata = json.load(f)
                         if pdata and isinstance(pdata, list):
                             p = pdata[0]
-                            patient_info = (
-                                f"Previous Disease: {p.get('Previous Disease','N/A')}, "
-                                f"Age: {p.get('Age','N/A')}, "
-                                f"DOB: {p.get('Date of Birth (DD-MM-YYYY)','N/A')}"
-                            )
-                except Exception as e:
-                    print(f"[AI] Patient data read error: {e}")
+                except:
+                    p = {}
 
-            # --- Prompt Construction ---
-            prompt = (
-                f"Given the following real-time health sensor readings:\n{vitals}.\n"
-                f"Patient details: {patient_info}.\n"
-                "Provide a short, medically sound analysis and advice."
-            )
-        
-            # --- AI Generation ---
-            def predicted_disease():
-                try:
-                    age = p.get('Age','N/A')
-                except Exception as e:
-                    print(e)
+            hr, gsr, temperature, spo2 = get_clean_sensor_values()
 
-                try:
-                    past_encoded = label_past.transform([p.get('Previous Disease','N/A')])
-                except ValueError:
-                    past_encoded = 0
-
-                hr_temp_ratio = converted_values[0] / (converted_values[2] + 1e-5)
-                oxygen_stress_index = (100 - converted_values[3]) + (converted_values[1] / 1000)
-                temp_spo2_interaction = converted_values[2] * (100 - converted_values[3])
-                hrv_index = abs(converted_values[0] - np.mean([converted_values[0]])) / 10.0
-                thermal_stress_index = (converted_values[2] - 36.5) * (converted_values[1] / 800.0)
-                stress_ratio = (converted_values[0] / 100.0) + (converted_values[1] / 800) - (converted_values[3] / 95.0)
-
-                base_values = np.array([[heart_rate, gsr, temperature, spo2, age,
-                                         hr_temp_ratio, oxygen_stress_index, temp_spo2_interaction,
-                                         hrv_index, thermal_stress_index, stress_ratio]])
-
-                poly_features = poly.fit_transform(base_values)
-
-                X_full = np.concatenate([poly_features, np.array([[past_encoded]])], axis=1)
-                X_scaled = scaler.transform(X_full)
-
-                pred  = model.predict(X_scaled)[0]
-                disease = label_disease.inverse_transform([pred])[0]
-                return disease
-            
-            data = pd.read_csv(r"F:\Health_moni\datasets\logical_health_dataset.csv")
-
-            if "PredictDisease" in data.columns and "ShortAdvice" in data.columns:
-                advice_dict = data.groupby("PredictedDisease")["ShortAdvice"].first().to_dict()
-            else:
-                advice_dict = {}
+            age, past_encoded = get_clean_patient_data(p)
 
             try:
-                response1 = predicted_disease()
-                response2 =  advice_dict.get(response1, "⚕️ No advice available for this condition.")
-                response = f"The predicted disease is {response1}; it is advised to {response2}."
-  
-                if not response.strip():
-                    response = "AI returned empty response."
-
-                with prescription_lock:
-                    out = response.strip()
-
-                print("[AI] Response generated:", response[:150], "...")
-
+                disease = predict_disease_ml(hr, gsr, temperature, spo2, age, past_encoded)
             except Exception as e:
-                print(f"[AI] Inference error: {e}")
-                with prescription_lock:
-                    out = f"AI inference error: {e}"
+                print("[AI] ML prediction error:", e)
+                disease = "Unknown"
+
+            advice = get_disease_advice(disease)
+
+            response = f"The predicted disease is {disease}. It is advised to {advice}."
+
+            if not response.strip():
+                response = "AI produced an empty response."
+
+            with prescription_lock:
+                out = response
+
+            print("[AI] Updated advice:", response[:100], "...")
 
         except Exception as e:
-            print(f"[AI] Loop error: {e}")
             with prescription_lock:
-                out = f"AI loop error: {e}"
+                out = f"AI loop error: {str(e)}"
+            print("[AI Loop Error]", e)
 
-        # --- Wait before next cycle ---
-        time.sleep(120)  # Repeat every 3 minutes
+        time.sleep(120)
 
 def logout(master):
     clear_session()
@@ -1023,49 +1057,62 @@ def open_dashboard(master):
     fields.clear()
 
     for i, (name, icon) in enumerate(field_names):
-        label = ctk.CTkLabel(main_frame, text=f"{icon} {name}:", anchor="w",
-                             text_color="white", font=("Segoe UI", 11, "bold"))
+        label = ctk.CTkLabel(
+            main_frame,
+            text=f"{icon} {name}:",
+            anchor="w",
+            text_color="white",
+            font=("Segoe UI", 11, "bold")
+        )
         label.grid(row=i + 1, column=0, padx=10, pady=10, sticky="w")
 
         if name == "Previous Disease":
-            entry1 = ctk.CTkTextbox(main_frame,
-                                   values1 = [
-                                            "Anemia",
-                                            "Asthma",
-                                            "Heart Disease",
-                                            "Hypertension"
-                                      ],
-                                      fg_color="#222",
-                                      button_color="#444",
-                                      text_color="white",
-                                      dropdown_hover_color="#0094ff",
-                                      width=300,
-                                      corner_radius=10)
-            entry1.set("Past Disease")
+            widget = ctk.CTkOptionMenu(
+                main_frame,
+                values=[
+                    "Anemia",
+                    "Asthma",
+                    "Heart Disease",
+                    "Hypertension",
+                    "Other"
+                ],
+                fg_color="#222",
+                button_color="#444",
+                text_color="white",
+                dropdown_hover_color="#0094ff",
+                width=300,
+                corner_radius=10
+            )
+            widget.set("Select past disease")
         elif name == "Safe Environment for Patient":
-            entry = ctk.CTkOptionMenu(main_frame,
-                                      values=[
-                                          "0 - 50 (Good)",
-                                          "51 - 100 (Moderate)",
-                                          "101 - 200 (Unhealthy for Sensitive Groups)",
-                                          "201 - 300 (Unhealthy)",
-                                          "301+ (Hazardous)"
-                                      ],
-                                      fg_color="#222",
-                                      button_color="#444",
-                                      text_color="white",
-                                      dropdown_hover_color="#0094ff",
-                                      width=300,
-                                      corner_radius=10)
-            entry.set("Select AQI Range")
+            widget = ctk.CTkOptionMenu(
+                main_frame,
+                values=[
+                    "0 - 50 (Good)",
+                    "51 - 100 (Moderate)",
+                    "101 - 200 (Unhealthy for Sensitive Groups)",
+                    "201 - 300 (Unhealthy)",
+                    "301+ (Hazardous)"
+                ],
+                fg_color="#222",
+                button_color="#444",
+                text_color="white",
+                dropdown_hover_color="#0094ff",
+                width=300,
+                corner_radius=10
+            )
+            widget.set("Select AQI range")
         else:
-            entry = ctk.CTkEntry(main_frame, width=300, corner_radius=10,
-                                 border_width=1, border_color="cyan")
+            widget = ctk.CTkEntry(
+                main_frame,
+                width=300,
+                corner_radius=10,
+                border_width=1,
+                border_color="cyan"
+            )
 
-        entry.grid(row=i + 1, column=1, padx=10, pady=10, sticky="ew")
-        entry1.grid(row=i + 1, column=1, padx=10, pady=10, sticky="ew")
-        fields[name] = entry
-        fields[name] = entry1
+        widget.grid(row=i + 1, column=1, padx=10, pady=10, sticky="ew")
+        fields[name] = widget
 
     button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
     button_frame.grid(row=len(field_names) + 1, column=0, columnspan=2, pady=20)
@@ -1089,15 +1136,22 @@ def open_link(event=None):
 
 def submit():
     global entry_userial_port, entry_pass
-    userial_portname = entry_userial_port
-    password = entry_pass
+    global stored_userial_port_enc, stored_pass_enc
 
-    if not userial_portname or not password:
+    # Resolve current entry values whether widgets are rendered or we are running headless
+    username = entry_userial_port.get().strip() if hasattr(entry_userial_port, "get") else str(entry_userial_port or "").strip()
+    password = entry_pass.get().strip() if hasattr(entry_pass, "get") else str(entry_pass or "").strip()
+
+    # Ensure latest credentials are loaded before validating
+    if not stored_userial_port_enc or not stored_pass_enc:
+        load_serial_portver_credentials()
+
+    if not username or not password:
         messagebox.showerror("Error", "Please enter userial_portname and password")
         return
 
     # Compare with stored decoded credentials
-    if userial_portname == stored_userial_port_enc and password == stored_pass_enc:
+    if username == stored_userial_port_enc and password == stored_pass_enc:
         # Check local IP matches expected device IP
         try:
             save_session()
@@ -1115,6 +1169,12 @@ def submit():
 
 def show_login_widgets(master_window):
     global entry_userial_port, entry_pass
+    global stored_userial_port_enc, stored_pass_enc
+
+    # Always make sure we have the latest credential cache before drawing the UI
+    if not stored_userial_port_enc or not stored_pass_enc:
+        load_serial_portver_credentials()
+
     for widget in master_window.winfo_children():
         widget.destroy()
 
@@ -1139,6 +1199,8 @@ def show_login_widgets(master_window):
                               corner_radius=10, fg_color="#1C1C1C",
                               border_color="#00FFFF", border_width=2, text_color="white")
     entry_userial_port.pack(pady=15)
+    if stored_userial_port_enc:
+        entry_userial_port.insert(0, stored_userial_port_enc)
 
     entry_pass = ctk.CTkEntry(frame, placeholder_text="Password", width=400, height=40,
                               corner_radius=10, fg_color="#1C1C1C",
@@ -1250,5 +1312,6 @@ if __name__ == "__main__":
         atexit.register(sensor_poll_stop.set)
         shutdown()
         print("[Main] Shutdown complete ✅")
+        pyautogui.hotkey('ctrl', 'v') 
 
 
