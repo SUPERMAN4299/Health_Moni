@@ -20,9 +20,23 @@
   animation: neon-glow 1.5s infinite alternate;
 }
 
+/* DARKER GLOBAL BACKGROUND */
+body {
+  background-color: #05080a !important;
+}
+
+.bg-background-dark {
+  background-color: #05080a !important;
+}
+
+.bg-background-dark\/50 {
+  background-color: rgba(5, 8, 10, 0.8) !important;
+}
+
+/* FEATURE CARDS */
 .feature-card {
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(13, 166, 242, 0.2);
+  background-color: rgba(0, 0, 0, 0.45) !important;
+  border: 1px solid rgba(13, 166, 242, 0.25);
   padding: 1.5rem;
   border-radius: 0.5rem;
   transition: all 0.3s ease;
