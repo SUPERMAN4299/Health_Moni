@@ -5,6 +5,7 @@ import sys
 import random
 import logging
 import re
+from twilio.rest import Client
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets, QtCore
 import requests
@@ -290,68 +291,34 @@ logger = logging.getLogger(__name__)
 PATIENT_FILE = "patient_data1.json"
 
 # Global variables
-Contact_No = ""
-Emergency_No = ""
-account_sid = ""
-auth_token = ""
-TO_WHATSAPP = ""
-FROM_WHATSAPP = ""
+
+with open("config.json", "r") as f:
+    cfg = json.load(f)
+
+    account_sid = cfg["account_sid"]
+    auth_token = cfg["auth_token"]
+    TO_WHATSAPP = cfg["TO_WHATSAPP"]
+    FROM_WHATSAPP = cfg["FROM_WHATSAPP"]
+
+with open("patient_data1.json", "r") as f:
+    pdata = json.load(f)
+    Contact_No = pdata[0].get("Contact_No", "") if pdata else ""
+    Emergency_No = pdata[0].get("Emergency_No", "") if pdata else ""
 
 
-def loading_sms_config():
-    global Contact_No, Emergency_No, account_sid, auth_token, TO_WHATSAPP, FROM_WHATSAPP
 
-    # Load patient data
-    patient_path = PATIENT_FILE if os.path.exists(PATIENT_FILE) else "patient_data1.json"
-    try:
-        with open(patient_path, "r") as file_pat:
-            data_pat = json.load(file_pat)
-    except Exception:
-        data_pat = []
+def send_whatsapp(body):
+    
+    client = Client(account_sid, auth_token)
 
-    # Load Twilio config
-    try:
-        with open("config.json", "r") as file:
-            data = json.load(file)
-    except Exception:
-        data = {}
+    message = client.messages.create(
+        body=body,
+        from_="+15677042248",
+        to=Contact_No,
+    )
 
-    # Extract patient contact info
-    if data_pat and isinstance(data_pat, list):
-        Contact_No = data_pat[0].get("Contact_No", "")
-        Emergency_No = data_pat[0].get("Emergency_No", "")
-    else:
-        Contact_No = ""
-        Emergency_No = ""
+    print(message.body)
 
-    # Extract Twilio / WhatsApp settings
-    TO_WHATSAPP = data.get("TO_WHATSAPP", "")
-    FROM_WHATSAPP = data.get("FROM_WHATSAPP", "")
-    account_sid = data.get("account_sid", "")
-    auth_token = data.get("auth_token", "")
-
-
-def send_whatsapp_alert(body):
-    while True:
-        loading_sms_config()
-
-        if not account_sid or not auth_token or not TO_WHATSAPP or not FROM_WHATSAPP:
-            logger.warning("Twilio/WhatsApp configuration missing; cannot send message")
-            return
-
-        try:
-            client = Client(account_sid, auth_token)
-            message = client.messages.create(
-                from_=FROM_WHATSAPP,
-                body=body,
-                to=TO_WHATSAPP
-            )
-            print(f"✅ WhatsApp alert sent successfully! SID: {message.sid}")
-            return message.sid
-
-        except Exception as e:
-            logger.error(f"❌ Failed to send WhatsApp alert: {e}")
-        time.sleep(1000)  # Retry after delay
 
 # ---------------- Read sensor data ---------------- #
 
@@ -720,10 +687,10 @@ sensor_lock = threading.Lock()
 # --- Global Variables ---
 out = "AI not ready..."
 
-model = joblib.load(r"F:\Health_moni\health_ai_final_ultra_best_ensemble.pkl")
-label_disease = joblib.load(r"F:\Health_moni\label_disease.pkl")
-label_past = joblib.load(r"F:\Health_moni\label_past.pkl")
-scaler = joblib.load(r"F:\Health_moni\scaler_poly_final.pkl")
+model = joblib.load(r"F:\Health_moni\datasets\health_ai_final_ultra_best_ensemble.pkl")
+label_disease = joblib.load(r"F:\Health_moni\datasets\label_disease.pkl")
+label_past = joblib.load(r"F:\Health_moni\datasets\label_past.pkl")
+scaler = joblib.load(r"F:\Health_moni\datasets\scaler_poly_final.pkl")
 
 # Fit PolynomialFeatures using dummy feature row (11 base features)
 poly = PolynomialFeatures(degree=2, include_bias=False)
@@ -739,15 +706,12 @@ base_features = [
 PATIENT_FILE = "./patient_data1.json"  # example path
 
 def get_clean_patient_data(p):
-    """Returns clean numeric patient values (age + encoded disease)."""
 
-    # Age
     try:
         age = int(p.get("Age", 0))
     except:
         age = 0
 
-    # Previous Disease encoding
     try:
         past_encoded = int(label_past.transform([p.get('Previous Disease', 'Other')])[0])
     except:
@@ -796,7 +760,7 @@ def predict_disease_ml(hr, gsr, temperature, spo2, age, past_encoded):
 
 def get_disease_advice(disease):
     try:
-        data = pd.read_csv(r"F:\Health_moni\logical_health_dataset.csv")
+        data = pd.read_csv(r"F:\Health_moni\datasets\logical_health_dataset.csv")
         if "PredictedDisease" in data.columns and "ShortAdvice" in data.columns:
             advice_map = data.groupby("PredictedDisease")["ShortAdvice"].first().to_dict()
             return advice_map.get(disease, "No advice available.")
@@ -838,7 +802,7 @@ def ai_loop():
             advice = get_disease_advice(disease)
 
             response = f"The predicted disease is {disease}. It is advised to {advice}."
-
+           
             if not response.strip():
                 response = "AI produced an empty response."
 
@@ -853,6 +817,24 @@ def ai_loop():
             print("[AI Loop Error]", e)
 
         time.sleep(120)
+
+def calling_sleep30():
+    last_30 = time.time()
+    last_180 = time.time()
+    while True:
+        now = time.time()
+
+        # Call every 30 seconds
+        if now - last_30 >= 30:
+            print("30s call:", out)
+            last_30 = now
+
+        # Call every 180 seconds
+        if now - last_180 >= 50:
+            print("180s call:", out)
+            last_180 = now
+
+        time.sleep(0.2)   
 
 def logout(master):
     clear_session()
@@ -1291,7 +1273,11 @@ if __name__ == "__main__":
         # 2) Start background AI thread
         ai_thread = threading.Thread(target=ai_loop, daemon=True, name="AIThread")
         ai_thread.start()
+        calling_sleep30_thread = threading.Thread(target=calling_sleep30, daemon=True)
+        calling_sleep30_thread.start()
+        
         print("[Main] AI thread started in background.")
+        
 
         # 3) Start serial_portial read loop thread
         threading.Thread(target=serial_portial_read_loop, daemon=True).start()
