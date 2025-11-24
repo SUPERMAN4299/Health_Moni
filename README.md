@@ -39,6 +39,10 @@ Health_moni/
 
 ## 🛠️ Setup & Installation
 
+## Datasets
+
+https://mega.nz/folder/HdkShRxJ#STY9RnZdL85Oz9gXcZDPxw
+
 ### 1. Hardware Requirements & Wiring
 **Microcontroller**: ESP32
 **Sensors**: MAX30102 (Pulse/Oximeter), DHT11 (Temp/Humidity), MQ-7 (Air Quality), GSR Sensor.
