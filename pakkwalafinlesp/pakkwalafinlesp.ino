@@ -1,338 +1,203 @@
 #include <Wire.h>
 #include "MAX30105.h"
 #include "spo2_algorithm.h"
-#include <MQUnifiedsensor.h>
 
-MAX30105 particleSensor;
+MAX30105 sensor;
 
-// --- MAX30102 Buffers ---
-#define BUFFER_SIZE 100
-uint32_t irBuffer[BUFFER_SIZE];
-uint32_t redBuffer[BUFFER_SIZE];
+// ---------------- MAX30102 BUFFERS ----------------
+#define BUF_SIZE 100
+uint32_t ir_buf[BUF_SIZE];
+uint32_t red_buf[BUF_SIZE];
 
-int32_t spo2;
-int8_t validSPO2;
-int32_t heartRate;
-int8_t validHeartRate;
+int32_t spo2_dummy; 
+int8_t validSpo2_dummy;
+int32_t hr_dummy;
+int8_t validHr_dummy;
 
-// --- Smartwatch-style HR + SPO2 blending ---
-float mixedHeartRate = 75;
-float lastHeartRate = 75;
+float hrFiltered = 0;
+float spo2Filtered = 0;
 
-float mixedSpo2 = 98;
-float lastSpo2 = 98;
+// ---------------- MQ7 SETTINGS ----------------
+#define MQ7_PIN 34
+float R0 = 10.0;
+const float VREF = 3.3;
+float A_const = 99.042;
+float B_const = -1.518;
 
-// --- GSR ---
-#define GSR_PIN 34
-int gsrValue = 0;
-float voltageGsr = 0;
-float conductance = 0;
+float ppmFiltered = 0;
+float aqiFiltered = 0;
 
-// --- MQ7 settings ---
-#define MQ7_PIN 35
-#define placa "ESP-32"
-#define Voltage_Resolution 3.3
-#define type "MQ-7"
-#define ADC_Bit_Resolution 12
-#define RatioMQ7CleanAir 27.5
+// ---------------- GSR SETTINGS ----------------
+#define GSR_PIN 35
+float gsrVoltage = 0;
+float gsrFiltered = 0;
 
-MQUnifiedsensor MQ7(placa, Voltage_Resolution, ADC_Bit_Resolution, MQ7_PIN, type);
+#define FIR_TAP_NUM 33
 
-float temperatureC = 0.0;
-float voltageMQ7 = 0.0;
-
-// --- MAX30102 Voltage ---
-float irVoltage = 0.0;
-float redVoltage = 0.0;
-
-// --- Finger detection ---
-uint32_t prevIR = 0;
-bool fingerDetected = false;
-
-
-
-class MovingAverageFilter {
-  private:
-    float *readings;
-    int numReadings;
-    int index;
-    float total;
-    bool initialized;
-  public:
-    MovingAverageFilter(int n) {
-      numReadings = n;
-      readings = new float[numReadings];
-      index = 0;
-      total = 0;
-      initialized = false;
-      for (int i = 0; i < numReadings; i++) readings[i] = 0;
-    }
-    float process(float newReading) {
-      total -= readings[index];
-      readings[index] = newReading;
-      total += readings[index];
-      index = (index + 1) % numReadings;
-      if (index == 0) initialized = true;
-
-      if (!initialized) {
-        if (index == 0) return 0;
-        return total / index;
-      }
-      return total / numReadings;
-    }
+float firCoeffs[FIR_TAP_NUM] = {
+    -0.0012, -0.0025, -0.0048, -0.0067, -0.0062, -0.0006,
+     0.0110,  0.0279,  0.0468,  0.0626,  0.0703,  0.0666,
+     0.0502,  0.0237, -0.0080, -0.0401, -0.0665, -0.0821,
+    -0.0832, -0.0676, -0.0357,  0.0032,  0.0400,  0.0659,
+     0.0754,  0.0679,  0.0468,  0.0187, -0.0098, -0.0321,
+    -0.0445, -0.0460, -0.0381
 };
 
-MovingAverageFilter mq7Filter(10);
-MovingAverageFilter gsrFilter(10);
+float firBuffer[FIR_TAP_NUM] = {0};
+int firIndex = 0;
 
+float applyFIR(float sample) {
+    firBuffer[firIndex] = sample;
+    float result = 0;
+    int idx = firIndex;
+    for (int i = 0; i < FIR_TAP_NUM; i++) {
+        result += firCoeffs[i] * firBuffer[idx];
+        idx--;
+        if (idx < 0) idx = FIR_TAP_NUM - 1;
+    }
+    firIndex++;
+    if (firIndex >= FIR_TAP_NUM) firIndex = 0;
 
-
-int calculateAQIfromCO(float co_ppm) {
-  if (co_ppm <= 4.4)   return 50;
-  if (co_ppm <= 9.4)   return 100;
-  if (co_ppm <= 12.4)  return 150;
-  if (co_ppm <= 15.4)  return 200;
-  if (co_ppm <= 30.4)  return 300;
-  if (co_ppm <= 40.4)  return 400;
-  return 500;
+    return result;
 }
 
+float dcIR = 0, dcRED = 0;
+float acIR = 0, acRED = 0;
 
-float getSmartWatchHeartRate(int realHR, bool valid) {
+const float SPO2_A = 110.0;
+const float SPO2_B = 25.0;
 
-  if (!valid || realHR == 0) {
-    float fakeHR = lastHeartRate + random(-3, 4);
-    fakeHR = constrain(fakeHR, 60, 110);
-    lastHeartRate = fakeHR;
-    return fakeHR;
-  }
+void computeACDC(float ir, float red) {
+    dcIR  = 0.995 * dcIR  + 0.005 * ir;
+    dcRED = 0.995 * dcRED + 0.005 * red;
 
-  float noise = random(-2, 3);
-  float smoothed = (lastHeartRate * 0.7) + (realHR * 0.3);
-  float mixed = smoothed + noise;
-
-  mixed = constrain(mixed, 55, 180);
-  lastHeartRate = mixed;
-  return mixed;
+    acIR  = ir  - dcIR;
+    acRED = red - dcRED;
 }
 
+float computeSpO2Medical(float ac_ir, float dc_ir, float ac_red, float dc_red) {
+    if (dc_ir < 2000 || dc_red < 2000) return -1;
 
-float getSmartWatchSpo2(int realSpo2, bool valid) {
+    float R = (ac_red / dc_red) / (ac_ir / dc_ir);
+    float spo2 = SPO2_A - SPO2_B * R;
 
-  // If invalid → generate stable fake SpO2
-  if (!valid || realSpo2 == 0) {
-    float fakeSpo2 = lastSpo2 + random(-1, 2);
-    fakeSpo2 = constrain(fakeSpo2, 96, 99);
-    lastSpo2 = fakeSpo2;
-    return fakeSpo2;
-  }
+    if (spo2 > 100) spo2 = 100;
+    if (spo2 < 70) spo2 = 70;
 
-  // Mix real + smoothing + micro noise
-  float noise = random(-1, 2) * 0.5;
-  float smoothed = (lastSpo2 * 0.8) + (realSpo2 * 0.2);
-  float mixed = smoothed + noise;
-
-  mixed = constrain(mixed, 90, 100);
-  lastSpo2 = mixed;
-  return mixed;
+    return spo2;
 }
 
+uint8_t ledPower = 0x1F;
 
+bool fingerDetected(uint32_t ir) {
+    return ir > 20000;
+}
+
+void autoLEDCalibration(uint32_t ir) {
+    if (ir < 30000) ledPower += 2;
+    else if (ir > 80000) ledPower -= 2;
+
+    if (ledPower < 0x0A) ledPower = 0x0A;
+    if (ledPower > 0x7F) ledPower = 0x7F;
+
+    sensor.setPulseAmplitudeRed(ledPower);
+    sensor.setPulseAmplitudeIR(ledPower);
+}
+
+float computeRs(float voltage, float RL = 10.0) {
+    if (voltage <= 0.0001) return 999999;
+    return (VREF - voltage) * RL / voltage;
+}
+
+float calculateAQI(float ppm) {
+    if (ppm < 0) ppm = 0;
+    if (ppm > 40) ppm = 40;
+
+    if (ppm <= 4.4) return (ppm / 4.4) * 50;
+    if (ppm <= 9.4) return 50 + ((ppm - 4.4) / 5.0) * 50;
+    if (ppm <= 12.4) return 100 + ((ppm - 9.4) / 3.0) * 50;
+    if (ppm <= 15.4) return 150 + ((ppm - 12.4) / 3.0) * 50;
+    if (ppm <= 30.4) return 200 + ((ppm - 15.4) / 15.0) * 100;
+    return 300 + ((ppm - 30.4) / 10.0) * 200;
+}
 
 
 void setup() {
-  Serial.begin(115200);
-  Serial.println("Initializing sensors...");
+    Serial.begin(115200);
+    Wire.begin(21, 22);
 
-  analogReadResolution(12);
-  analogSetAttenuation(ADC_11db);
+    if (!sensor.begin(Wire, I2C_SPEED_FAST)) {
+        Serial.println("MAX30102 not found!");
+        while (1);
+    }
 
-  if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
-    Serial.println("❌ MAX30102 not found! Check wiring.");
-    while (1);
-  }
+    sensor.setup();
+    sensor.setPulseAmplitudeRed(0x1F);
+    sensor.setPulseAmplitudeIR(0x1F);
 
-  particleSensor.setup();
-  particleSensor.setPulseAmplitudeRed(0x2F);
-  particleSensor.setPulseAmplitudeIR(0x2F);
-  particleSensor.setPulseAmplitudeGreen(0x00);
-
-
-  MQ7.setRegressionMethod(1);
-  MQ7.setA(99.042);
-  MQ7.setB(-1.518);
-  MQ7.init();
-
-  Serial.println("All sensors ready.\n");
+    Serial.println("System Ready.");
 }
 
 
-
 void loop() {
 
+    // ---------------- MAX30102 READ ----------------
+    uint32_t irRaw = sensor.getIR();
+    uint32_t redRaw = sensor.getRed();
 
-  for (int i = 0; i < BUFFER_SIZE; i++) {
-    while (!particleSensor.check()) {}
-    redBuffer[i] = particleSensor.getRed();
-    irBuffer[i] = particleSensor.getIR();
-  }
+    if (!fingerDetected(irRaw)) {
+        Serial.println("NO FINGER DETECTED");
+        delay(100);
+        return;
+    }
 
-  uint32_t currentIR = irBuffer[BUFFER_SIZE - 1];
-  uint32_t currentRED = redBuffer[BUFFER_SIZE - 1];
+    autoLEDCalibration(irRaw);
 
-  // ============================
-  //   MAX30102 VOLTAGE
-  // ============================
-  irVoltage = ((float)currentIR / 262143.0) * 3.3;
-  redVoltage = ((float)currentRED / 262143.0) * 3.3;
+    float irFiltered  = applyFIR((float)irRaw);
+    float redFiltered = applyFIR((float)redRaw);
 
-  // ============================
-  //   FINGER DETECTION
-  // ============================
-  if (currentIR > 50000) fingerDetected = true;
-  else fingerDetected = false;
+    computeACDC(irFiltered, redFiltered);
 
-  prevIR = currentIR;
+    float spo2_medical = computeSpO2Medical(acIR, dcIR, acRED, dcRED);
 
-  // ============================
-  //   SPO2 & HEART RATE
-  // ============================
-  if (fingerDetected) {
+    // ---------------- MQ7 READ ----------------
+    int rawADC = analogRead(MQ7_PIN);
+    float voltage = (rawADC / 4095.0) * VREF;
 
-    maxim_heart_rate_and_oxygen_saturation(
-      irBuffer, BUFFER_SIZE,
-      redBuffer,
-      &spo2, &validSPO2,
-      &heartRate, &validHeartRate
-    );
+    float Rs = computeRs(voltage);
+    float ppm = A_const * pow((Rs / R0), B_const);
 
-    if (spo2 == -999 || spo2 > 100) spo2 = 0;
-    if (heartRate == -999 || heartRate > 200) heartRate = 0;
+    ppmFiltered = 0.05 * ppm + 0.95 * ppmFiltered;
 
-  } else {
-    spo2 = 0;
-    heartRate = 0;
-  }
+    // AUTO CALIBRATION (only in clean air)
+    static float Rs_avg = Rs;
+    Rs_avg = 0.05 * Rs + 0.95 * Rs_avg;
 
-  // ============================
-  //   SMARTWATCH HEART RATE + SPO2
-  // ============================
-  mixedHeartRate = getSmartWatchHeartRate(heartRate, validHeartRate);
-  mixedSpo2 = getSmartWatchSpo2(spo2, validSPO2);
+    if (ppmFiltered < 3.0) {
+        R0 = 0.999 * R0 + 0.001 * Rs_avg;
+    }
 
-  // ============================
-  //   TEMPERATURE
-  // ============================
-  temperatureC = particleSensor.readTemperature();
+    float AQI = calculateAQI(ppmFiltered);
 
-  // ============================
-  //   GSR
-  // ============================
-  int rawGsr = analogRead(GSR_PIN);
+    // ---------------- GSR ----------------
+    int gsrRaw = analogRead(GSR_PIN);
+    gsrVoltage = (gsrRaw / 4095.0) * 3.3;
+    gsrFiltered = 0.15 * gsrVoltage + 0.85 * gsrFiltered;
 
-  if (rawGsr < 50) {
-    gsrValue = 0;
-  } else {
-    gsrValue = (int)gsrFilter.process((float)rawGsr);
-  }
+    // ---------------- PRINT ----------------
+    Serial.println("===== SENSOR DATA =====");
+    Serial.print("SpO2 Medical: "); Serial.println(spo2_medical);
+    Serial.print("IR Raw: "); Serial.println(irRaw);
+    Serial.print("IR Filtered: "); Serial.println(irFiltered);
 
-  voltageGsr = (gsrValue / 4095.0) * 3.3;
-  conductance = (voltageGsr / 3.3) * 100.0;
+    Serial.print("CO (ppm filtered): "); Serial.println(ppmFiltered);
+    Serial.print("AQI: "); Serial.println(AQI);
+    Serial.print("R0 Auto: "); Serial.println(R0);
 
-  // ============================
-  //   MQ7
-  // ============================
-  MQ7.update();
-  float rawPPM = MQ7.readSensor();
+    Serial.print("GSR Voltage: "); Serial.println(gsrVoltage);
+    Serial.print("GSR Filtered: "); Serial.println(gsrFiltered);
 
-  float smoothedPPM = mq7Filter.process(rawPPM);
-  int aqi = calculateAQIfromCO(smoothedPPM);
+    Serial.println("========================\n");
 
-  int mq7Raw = analogRead(MQ7_PIN);
-  voltageMQ7 = (mq7Raw / 4095.0) * 3.3;
-
-void loop() {
-
-  for (int i = 0; i < BUFFER_SIZE; i++) {
-    while (!particleSensor.check()) {}
-    redBuffer[i] = particleSensor.getRed();
-    irBuffer[i] = particleSensor.getIR();
-  }
-
-  uint32_t currentIR = irBuffer[BUFFER_SIZE - 1];
-  uint32_t currentRED = redBuffer[BUFFER_SIZE - 1];
-
-  irVoltage = ((float)currentIR / 262143.0) * 3.3;
-  redVoltage = ((float)currentRED / 262143.0) * 3.3;
-
-  if (currentIR > 50000) fingerDetected = true;
-  else fingerDetected = false;
-  prevIR = currentIR;
-
-  if (fingerDetected) {
-
-    maxim_heart_rate_and_oxygen_saturation(
-      irBuffer, BUFFER_SIZE,
-      redBuffer,
-      &spo2, &validSPO2,
-      &heartRate, &validHeartRate
-    );
-
-    if (spo2 == -999 || spo2 > 100) spo2 = 0;
-    if (heartRate == -999 || heartRate > 200) heartRate = 0;
-
-  } else {
-    spo2 = 0;
-    heartRate = 0;
-  }
-
-  mixedHeartRate = getSmartWatchHeartRate(heartRate, validHeartRate);
-
-  temperatureC = particleSensor.readTemperature();
-
-  int rawGsr = analogRead(GSR_PIN);
-
-  if (rawGsr < 50) {
-    gsrValue = 0;
-  } else {
-    gsrValue = (int)gsrFilter.process((float)rawGsr);
-  }
-
-  voltageGsr = (gsrValue / 4095.0) * 3.3;
-  conductance = (voltageGsr / 3.3) * 100.0;
-
-  MQ7.update();
-  float rawPPM = MQ7.readSensor();
-
-  float smoothedPPM = mq7Filter.process(rawPPM);
-  int aqi = calculateAQIfromCO(smoothedPPM);
-
-  int mq7Raw = analogRead(MQ7_PIN);
-  voltageMQ7 = (mq7Raw / 4095.0) * 3.3;
-
-  String jsonOutput = "{";
-
-  jsonOutput += "\"GSR_DATA\": " + String(gsrValue) + ", ";
-  jsonOutput += "\"AIR_QUA_DATA\": " + String(aqi) + ", ";
-  jsonOutput += "\"TEMP_DATA\": " + String(temperatureC, 2) + ", ";
-  jsonOutput += "\"HEART_DATA\": " + String(mixedHeartRate, 0) + ", ";
-  jsonOutput += "\"SPO2\": " + String(mixedSpo2, 1) + ", ";
-  jsonOutput += "\"GSR_VOLTAGE\": " + String(voltageGsr, 2) + ", ";
-  jsonOutput += "\"MQ7_VOLTAGE\": " + String(voltageMQ7, 2) + ", ";
-  jsonOutput += "\"IR_VOLTAGE\": " + String(irVoltage, 4) + ", ";
-  jsonOutput += "\"RED_VOLTAGE\": " + String(redVoltage, 4);
-
-  jsonOutput += "}";
-
-  Serial.println("=== Sensor Readings ===");
-  Serial.println(jsonOutput);
-
-  if (fingerDetected)
-    Serial.println("Finger detected");
-  else
-    Serial.println("No finger detected");
-
-  Serial.println("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-\n");
-
-  delay(2000);
+    delay(120);
 }
