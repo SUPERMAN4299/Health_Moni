@@ -1,0 +1,10 @@
+{
+  "huggingface_token": "HF_TOKEN",
+  "model_name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+  "temperature": 0.7,
+  "max_new_tokens": 200,
+  "account_sid": "twillo_ssid",
+  "auth_token": "twillo_token",
+  "FROM_WHATSAPP": "+twilo_num",
+  "TO_WHATSAPP": "msg_num"
+}
